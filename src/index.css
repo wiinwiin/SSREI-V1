@@ -1,0 +1,189 @@
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+    line-height: 1.5;
+  }
+}
+
+@layer components {
+  .font-heading {
+    font-family: 'Libre Baskerville', Georgia, serif;
+  }
+
+  .font-body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer utilities {
+  .animate-slide-up {
+    animation: slideUp 0.2s ease-out forwards;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.15s ease-out forwards;
+  }
+  .animate-modal-in {
+    animation: modalIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  .animate-shimmer {
+    animation: shimmer 2.2s infinite;
+  }
+  .animate-gradient-shift {
+    animation: gradientShift 4s linear infinite;
+  }
+  .animate-glow-pulse {
+    animation: glowPulse 1s ease-in-out;
+  }
+  .animate-sun-spin {
+    animation: sunSpin 0.6s ease-in-out;
+  }
+  .animate-theme-fade-in {
+    animation: themeFadeIn 0.4s ease-out forwards;
+  }
+  .animate-sidebar-shimmer {
+    animation: sidebarShimmer 0.5s ease-out;
+  }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  60% { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes gradientShift {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes glowPulse {
+  0% { box-shadow: 0 0 0px #3b82f6; }
+  50% { box-shadow: 0 0 20px #3b82f6, 0 0 40px #3b82f633; }
+  100% { box-shadow: 0 0 0px #3b82f6; }
+}
+@keyframes sunSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes themeFadeIn {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+@keyframes sidebarShimmer {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --bg-card: #1e293b;
+  --bg-sidebar: #0f172a;
+  --bg-input: #1e293b;
+  --bg-header: rgba(15, 23, 42, 0.9);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-placeholder: #475569;
+  --border: #334155;
+  --border-input: #334155;
+  --accent: #1E6FA4;
+  --accent-hover: #1a5f8f;
+  --accent-bright: #1E90FF;
+  --scrollbar-track: #0f172a;
+  --scrollbar-thumb: #334155;
+  --scrollbar-thumb-hover: #1E6FA4;
+}
+
+:root[data-theme="light"] {
+  --bg: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-input: #f8fafc;
+  --bg-header: rgba(255, 255, 255, 0.92);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-placeholder: #94a3b8;
+  --border: #e2e8f0;
+  --border-input: #cbd5e1;
+  --accent: #1E6FA4;
+  --accent-hover: #1a5f8f;
+  --accent-bright: #1565c0;
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  transition-property: background-color, color, border-color, box-shadow;
+  transition-duration: 0.3s;
+  transition-timing-function: ease;
+}
+
+*:is(input, textarea, button, a, [class*="animate"]) {
+  transition-duration: 0.15s;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+:root[data-theme="light"] .ssrei-app {
+  animation: themeFadeIn 0.4s ease-out forwards;
+}
+
+:root[data-theme="light"] .ssrei-sidebar {
+  box-shadow: 1px 0 0 0 rgba(15, 23, 42, 0.08), 4px 0 16px rgba(15, 23, 42, 0.04);
+  animation: sidebarShimmer 0.5s ease-out;
+}
+
+:root[data-theme="light"] .ssrei-card {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
