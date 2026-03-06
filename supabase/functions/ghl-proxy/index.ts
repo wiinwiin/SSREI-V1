@@ -578,11 +578,11 @@ async function handleSubmitLead(
 
   if (!opportunityId) {
     const oppPayload = {
-      pipelineId: settings.ghl_pipeline_id,
-      locationId: settings.ghl_location_id,
+      pipeline_id: settings.ghl_pipeline_id,
+      location_id: settings.ghl_location_id,
       name: `${ownerName} - ${normalizedLead.property_address || ""}`,
-      pipelineStageId: stageId,
-      contactId,
+      pipeline_stage_id: stageId,
+      contact_id: contactId,
       status: "open",
       customFields: opportunityCustomFields,
     };
@@ -825,7 +825,7 @@ async function handleGetOpportunities(
 
   return {
     opportunities,
-    _proxy_version: "1.4",
+    _proxy_version: "1.5",
     _debug: {
       pipelineId,
       logs: debugLogs,
