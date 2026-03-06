@@ -825,7 +825,7 @@ async function handleGetOpportunities(
 
   return {
     opportunities,
-    _proxy_version: "1.3",
+    _proxy_version: "1.4",
     _debug: {
       pipelineId,
       logs: debugLogs,
