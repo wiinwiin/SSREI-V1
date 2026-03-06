@@ -31,10 +31,15 @@ export default function OpportunitiesPage() {
       setPipelineId(pid);
       setPipelineName(pname);
 
-      const opps = await getOpportunities(pid);
+      const data = await getOpportunities(pid);
+      const opps = data.opportunities || [];
+
+      if (data._debug) {
+        console.log('GHL Sync Debug:', data._debug);
+      }
 
       const enriched = await Promise.all(
-        opps.map(async (opp) => {
+        opps.map(async (opp: GHLOpportunity) => {
           const contactId = opp.contact?.id;
           if (!contactId) return opp;
 

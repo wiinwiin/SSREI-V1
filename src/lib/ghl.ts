@@ -85,14 +85,14 @@ export interface GHLOpportunity {
   stageName?: string; // Fallback field
 }
 
-export async function getOpportunities(pipelineId: string): Promise<GHLOpportunity[]> {
+export async function getOpportunities(pipelineId: string): Promise<{ opportunities: GHLOpportunity[]; _debug?: any }> {
   const res = await fetch(`${PROXY_URL}?action=get-opportunities&pipelineId=${encodeURIComponent(pipelineId)}`, {
     method: 'GET',
     headers: JSON_HEADERS,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'GHL fetch opportunities failed');
-  return data.opportunities || [];
+  return data;
 }
 
 export async function bulkUpdateOpportunityStage(opportunityIds: string[], stageId: string): Promise<void> {
