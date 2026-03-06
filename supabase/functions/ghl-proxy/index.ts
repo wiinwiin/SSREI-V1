@@ -599,7 +599,7 @@ async function handleSubmitLead(
         const errorData = JSON.parse(errText);
         if (errorData.statusCode === 400 && errorData.message?.includes("duplicate opportunity")) {
           const searchRes = await fetch(
-            `${GHL_BASE}/opportunities?location_id=${settings.ghl_location_id}&pipeline_id=${settings.ghl_pipeline_id}&contact_id=${contactId}`,
+            `${GHL_BASE}/opportunities/search?location_id=${settings.ghl_location_id}&pipeline_id=${settings.ghl_pipeline_id}&contact_id=${contactId}`,
             { headers: ghlHeaders(settings.ghl_api_key) }
           );
           if (searchRes.ok) {
@@ -759,7 +759,7 @@ async function handleGetOpportunities(
   const settings = await getSettings(supabase);
 
   // Attempt 1: Specific pipeline search using standard list endpoint
-  let url = `${GHL_BASE}/opportunities?location_id=${settings.ghl_location_id}&pipeline_id=${pipelineId}&status=all&limit=100`;
+  let url = `${GHL_BASE}/opportunities/search?location_id=${settings.ghl_location_id}&pipeline_id=${pipelineId}&status=all&limit=100`;
   console.log(`GHL Fetch URL (Specific): ${url}`);
   let res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
 
@@ -777,7 +777,7 @@ async function handleGetOpportunities(
 
   // Attempt 2: Broad location search if no results found
   if (rawOpps.length === 0) {
-    url = `${GHL_BASE}/opportunities?location_id=${settings.ghl_location_id}&status=all&limit=100`;
+    url = `${GHL_BASE}/opportunities/search?location_id=${settings.ghl_location_id}&status=all&limit=100`;
     debugLogs.push(`Broad fetch URL: ${url}`);
     res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
     if (res.ok) {
@@ -825,7 +825,7 @@ async function handleGetOpportunities(
 
   return {
     opportunities,
-    _proxy_version: "1.2",
+    _proxy_version: "1.3",
     _debug: {
       pipelineId,
       logs: debugLogs,
