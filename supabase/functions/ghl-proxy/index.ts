@@ -32,22 +32,16 @@ async function getSettings(
     .in("key", ["api_key", "location_id", "pipeline_id"]);
 
   if (!data || data.length === 0) {
-    console.error("No data returned from app_settings table");
-    throw new Error("Could not load GHL settings from database. Check if 'app_settings' table has data.");
+    throw new Error("Could not load GHL settings from database.");
   }
 
   const settings: Record<string, string> = {};
   for (const row of data) {
-    settings[row.key] = row.value;
+    settings[row.key] = row.value?.toString().trim();
   }
 
-  console.log(`Found settings keys: ${Object.keys(settings).join(", ")}`);
-
   if (!settings.api_key || !settings.location_id || !settings.pipeline_id) {
-    const missing = ["api_key", "location_id", "pipeline_id"].filter(k => !settings[k]);
-    throw new Error(
-      `GHL credentials are incomplete. Missing: ${missing.join(", ")}. Please configure in Settings.`
-    );
+    throw new Error("GHL credentials are incomplete in database.");
   }
 
   return {
@@ -770,29 +764,36 @@ async function handleGetOpportunities(
   let res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
 
   let rawOpps = [];
+  let debugLogs = [];
 
   if (res.ok) {
     const data = await res.json();
     rawOpps = data.opportunities || [];
-    console.log(`Specific search returned ${rawOpps.length} raw opportunities`);
+    debugLogs.push(`Specific search found ${rawOpps.length} opportunities`);
   } else {
     const text = await res.text();
-    console.error(`GHL Search Error (${res.status}):`, text);
+    debugLogs.push(`Specific search failed (${res.status}): ${text}`);
   }
 
   // Attempt 2: Broad location search if no results found
   if (rawOpps.length === 0) {
-    console.log("No opportunities found for specific pipeline, trying broad location search...");
     url = `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&status=all&limit=100`;
+    debugLogs.push(`Broad search URL: ${url}`);
     res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
     if (res.ok) {
       const data = await res.json();
       const allOpps = data.opportunities || [];
+      debugLogs.push(`Broad search found ${allOpps.length} total opportunities for location`);
+
       // Manually filter by pipeline ID
-      rawOpps = allOpps.filter((o: any) =>
-        (o.pipelineId === pipelineId) || (o.pipeline_id === pipelineId)
-      );
-      console.log(`Broad search found ${allOpps.length} total, ${rawOpps.length} matched pipeline ${pipelineId}`);
+      rawOpps = allOpps.filter((o: any) => {
+        const oPid = o.pipelineId || o.pipeline_id;
+        return oPid === pipelineId;
+      });
+      debugLogs.push(`Filtered broad search to ${rawOpps.length} matching pipeline ${pipelineId}`);
+    } else {
+      const text = await res.text();
+      debugLogs.push(`Broad search failed (${res.status}): ${text}`);
     }
   }
 
@@ -803,7 +804,7 @@ async function handleGetOpportunities(
     if (!contactInfo && (o.contactId || o.contact_id)) {
       contactInfo = {
         id: o.contactId || o.contact_id,
-        name: o.contactName || o.contact_name || "Unknown Contact",
+        name: o.contactName || o.contact_name || "Unknown",
         email: o.contactEmail || o.contact_email,
         phone: o.contactPhone || o.contact_phone
       };
@@ -812,12 +813,12 @@ async function handleGetOpportunities(
     return {
       ...o,
       id: o.id,
-      name: o.name || o.opportunityName || "Untitled Opportunity",
+      name: o.name || o.opportunityName || "No Name",
       pipelineId: o.pipelineId || o.pipeline_id || pipelineId,
       pipelineStageId: stageId,
-      stageName: o.stageName || o.stage_name, // Added for fallback matching
+      stageName: o.stageName || o.stage_name,
       status: o.status || "open",
-      monetaryValue: o.monetaryValue ?? o.value ?? o.monetary_value ?? 0,
+      monetaryValue: o.monetaryValue ?? o.value ?? 0,
       contact: contactInfo
     };
   });
@@ -826,7 +827,7 @@ async function handleGetOpportunities(
     opportunities,
     _debug: {
       pipelineId,
-      mappedCount: opportunities.length,
+      logs: debugLogs,
       locationId: settings.ghl_location_id
     }
   };
