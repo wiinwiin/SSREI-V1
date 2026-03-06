@@ -72,7 +72,7 @@ async function fetchPipelineStageId(
   stageName: string
 ): Promise<string> {
   const res = await fetch(
-    `${GHL_BASE}/opportunities/pipelines/?locationId=${settings.ghl_location_id}`,
+    `${GHL_BASE}/opportunities/pipelines?locationId=${settings.ghl_location_id}`,
     { headers: ghlHeaders(settings.ghl_api_key) }
   );
   if (!res.ok) {
@@ -688,9 +688,20 @@ async function handleDeleteOpportunity(
 }
 
 async function handleGetPipelineStages(
-  supabase: ReturnType<typeof createClient>
+  supabase: ReturnType<typeof createClient>,
+  providedSettings?: Partial<GHLSettings>
 ) {
-  const settings = await getSettings(supabase);
+  let settings: GHLSettings;
+  if (providedSettings?.ghl_api_key && providedSettings?.ghl_location_id) {
+    settings = {
+      ghl_api_key: providedSettings.ghl_api_key,
+      ghl_location_id: providedSettings.ghl_location_id,
+      ghl_pipeline_id: providedSettings.ghl_pipeline_id || "",
+    };
+    console.log("Using provided settings for pipeline stages lookup");
+  } else {
+    settings = await getSettings(supabase);
+  }
 
   if (!settings.ghl_api_key) {
     throw new Error("API Key is missing. Please configure it in Settings.");
@@ -705,7 +716,7 @@ async function handleGetPipelineStages(
   console.log(`Location ID: ${settings.ghl_location_id}`);
 
   const res = await fetch(
-    `${GHL_BASE}/opportunities/pipelines/?locationId=${settings.ghl_location_id}`,
+    `${GHL_BASE}/opportunities/pipelines?locationId=${settings.ghl_location_id}`,
     { headers: ghlHeaders(settings.ghl_api_key) }
   );
 
@@ -934,7 +945,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "GET" && action === "get-pipeline-stages") {
-      const result = await handleGetPipelineStages(supabase);
+      const ghl_api_key = url.searchParams.get("api_key");
+      const ghl_location_id = url.searchParams.get("location_id");
+      const ghl_pipeline_id = url.searchParams.get("pipeline_id");
+
+      const provided = ghl_api_key && ghl_location_id ? { ghl_api_key, ghl_location_id, ghl_pipeline_id } : undefined;
+
+      const result = await handleGetPipelineStages(supabase, provided as any);
       return jsonResponse(result);
     }
 

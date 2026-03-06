@@ -246,7 +246,13 @@ export function SettingsPage() {
     setTestingConnection(true);
     setConnectionStatus(null);
     try {
-      const res = await fetch('/api/ghl-proxy?action=get-pipeline-stages');
+      const params = new URLSearchParams({
+        action: 'get-pipeline-stages',
+        api_key: settings.api_key || '',
+        location_id: settings.location_id || '',
+        pipeline_id: settings.pipeline_id || '',
+      });
+      const res = await fetch(`/api/ghl-proxy?${params.toString()}`);
       const data = await res.json();
       if (res.ok && data.stages) {
         setConnectionStatus({ success: true, message: `Connected successfully! Found pipeline: ${data.pipelineName}` });
