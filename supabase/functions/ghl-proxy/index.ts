@@ -763,16 +763,35 @@ async function handleGetOpportunities(
   pipelineId: string
 ) {
   const settings = await getSettings(supabase);
+  // Using status=all to ensure we don't miss anything, and locationId is required
   const res = await fetch(
-    `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&pipelineId=${pipelineId}`,
+    `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&pipelineId=${pipelineId}&status=all&limit=100`,
     { headers: ghlHeaders(settings.ghl_api_key) }
   );
+
   if (!res.ok) {
     const text = await res.text();
+    console.error(`GHL Search Error (${res.status}):`, text);
     throw new Error(`GHL fetch opportunities failed (${res.status}): ${text}`);
   }
+
   const data = await res.json();
-  return { opportunities: data.opportunities || [] };
+  const rawOpps = data.opportunities || [];
+
+  // Map fields defensively to ensure frontend gets what it expects
+  const opportunities = rawOpps.map((o: any) => ({
+    ...o,
+    id: o.id,
+    name: o.name || "Untitled Opportunity",
+    pipelineId: o.pipelineId || o.pipeline_id,
+    pipelineStageId: o.pipelineStageId || o.pipeline_stage_id || o.stageId,
+    status: o.status,
+    monetaryValue: o.monetaryValue || o.value || 0,
+    contact: o.contact || (o.contactId ? { id: o.contactId, name: o.contactName || "Unknown" } : undefined)
+  }));
+
+  console.log(`Found ${opportunities.length} opportunities for pipeline ${pipelineId}`);
+  return { opportunities };
 }
 
 async function handleUpdateOpportunityStage(
