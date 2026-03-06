@@ -32,11 +32,9 @@ export default function OpportunitiesPage() {
       setPipelineName(pname);
 
       const data = await getOpportunities(pid);
-      const opps = data.opportunities || [];
+      console.log('GHL Proxy Response:', data);
 
-      if (data._debug) {
-        console.log('GHL Sync Debug:', data._debug);
-      }
+      const opps = data.opportunities || [];
 
       const enriched = await Promise.all(
         opps.map(async (opp: GHLOpportunity) => {

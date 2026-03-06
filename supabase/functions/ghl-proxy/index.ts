@@ -599,7 +599,7 @@ async function handleSubmitLead(
         const errorData = JSON.parse(errText);
         if (errorData.statusCode === 400 && errorData.message?.includes("duplicate opportunity")) {
           const searchRes = await fetch(
-            `${GHL_BASE}/opportunities?location_id=${settings.ghl_location_id}&pipeline_id=${settings.ghl_pipeline_id}&contactId=${contactId}`,
+            `${GHL_BASE}/opportunities?location_id=${settings.ghl_location_id}&pipeline_id=${settings.ghl_pipeline_id}&contact_id=${contactId}`,
             { headers: ghlHeaders(settings.ghl_api_key) }
           );
           if (searchRes.ok) {
@@ -825,6 +825,7 @@ async function handleGetOpportunities(
 
   return {
     opportunities,
+    _proxy_version: "1.2",
     _debug: {
       pipelineId,
       logs: debugLogs,
