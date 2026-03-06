@@ -42,40 +42,24 @@ function InviteModal({ onClose, onInvited }: InviteModalProps) {
     setSending(true);
     setError('');
 
-    const { data, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(form.email, {
-      data: { full_name: form.full_name, role: form.role, title: form.title },
-    });
-
-    if (inviteErr) {
-      const tempId = crypto.randomUUID();
-      await supabase.from('user_profiles').insert({
-        id: tempId,
-        display_name: form.full_name,
-        full_name: form.full_name,
-        email: form.email,
-        role: form.role,
-        title: form.title,
-        is_active: true,
+    try {
+      const res = await fetch('/api/ghl-proxy?action=invite-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       });
-      setSending(false);
+
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to send invite');
+      }
+
       onInvited();
-      return;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while sending the invite');
+    } finally {
+      setSending(false);
     }
-
-    if (data?.user) {
-      await supabase.from('user_profiles').upsert({
-        id: data.user.id,
-        display_name: form.full_name,
-        full_name: form.full_name,
-        email: form.email,
-        role: form.role,
-        title: form.title,
-        is_active: true,
-      }, { onConflict: 'id' });
-    }
-
-    setSending(false);
-    onInvited();
   };
 
   return (

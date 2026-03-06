@@ -32,7 +32,8 @@ async function getSettings(
     .in("key", ["api_key", "location_id", "pipeline_id"]);
 
   if (!data || data.length === 0) {
-    throw new Error("Could not load GHL settings from database");
+    console.error("No data returned from app_settings table");
+    throw new Error("Could not load GHL settings from database. Check if 'app_settings' table has data.");
   }
 
   const settings: Record<string, string> = {};
@@ -40,9 +41,12 @@ async function getSettings(
     settings[row.key] = row.value;
   }
 
+  console.log(`Found settings keys: ${Object.keys(settings).join(", ")}`);
+
   if (!settings.api_key || !settings.location_id || !settings.pipeline_id) {
+    const missing = ["api_key", "location_id", "pipeline_id"].filter(k => !settings[k]);
     throw new Error(
-      "GHL credentials are incomplete. Please fill in API Key, Location ID, and Pipeline ID in Settings."
+      `GHL credentials are incomplete. Missing: ${missing.join(", ")}. Please configure in Settings.`
     );
   }
 
@@ -500,7 +504,7 @@ async function handleSubmitLead(
       mergedTags = [...new Set([...existingTags, ...allTags])];
     }
 
-    const updatePayload = { ...contactPayload, tags: mergedTags };
+    const updatePayload = { ...contactPayload, tags: mergedTags } as any;
     delete updatePayload.locationId;
 
     const updateRes = await fetch(`${GHL_BASE}/contacts/${existingContactId}`, {
@@ -841,6 +845,59 @@ async function handleRemoveContactTag(
   return { success: true };
 }
 
+async function handleInviteUser(
+  supabase: ReturnType<typeof createClient>,
+  payload: { email: string; full_name: string; role: string; title: string }
+) {
+  const { email, full_name, role, title } = payload;
+  if (!email || !full_name) throw new Error("Email and Full Name are required");
+
+  console.log(`Inviting user: ${email} with role: ${role}`);
+
+  // 1. Invite via Supabase Auth Admin
+  const { data, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(email, {
+    data: { full_name, role, title },
+  });
+
+  if (inviteErr) {
+    console.error("Invite error:", inviteErr);
+    // If user already exists, we might want to just update the profile
+    if (inviteErr.message.includes("already has been invited") || inviteErr.message.includes("already registered")) {
+      // Continue to profile upsert
+    } else {
+      throw inviteErr;
+    }
+  }
+
+  // 2. Upsert profile
+  const userId = data?.user?.id;
+  if (!userId) {
+    // If we didn't get a user ID but it's not a fatal error, try to find user by email
+    const { data: userData } = await supabase.from('user_profiles').select('id').eq('email', email).single();
+    if (!userData?.id) throw new Error("User invited but could not retrieve ID for profile creation");
+
+    await supabase.from('user_profiles').update({
+      full_name,
+      display_name: full_name,
+      role: role || 'agent',
+      title,
+      is_active: true
+    }).eq('id', userData.id);
+  } else {
+    await supabase.from('user_profiles').upsert({
+      id: userId,
+      email,
+      full_name,
+      display_name: full_name,
+      role: role || 'agent',
+      title,
+      is_active: true
+    }, { onConflict: 'id' });
+  }
+
+  return { success: true };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -962,6 +1019,12 @@ Deno.serve(async (req: Request) => {
       }
 
       return jsonResponse({ success: true });
+    }
+
+    if (req.method === "POST" && action === "invite-user") {
+      const body = await req.json();
+      const result = await handleInviteUser(supabase, body);
+      return jsonResponse(result);
     }
 
     return jsonResponse({ error: "Unknown action" }, 400);

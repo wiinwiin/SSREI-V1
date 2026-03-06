@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/ghl-proxy",
+      "destination": "https://iozeugdizxzndvedsgtw.supabase.co/functions/v1/ghl-proxy"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
