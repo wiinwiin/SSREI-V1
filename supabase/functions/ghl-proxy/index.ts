@@ -764,32 +764,44 @@ async function handleGetOpportunities(
 ) {
   const settings = await getSettings(supabase);
 
-  // We'll try to be as broad as possible with the search
-  const url = `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&pipelineId=${pipelineId}&status=all&limit=100`;
+  // Attempt 1: Specific pipeline search
+  let url = `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&pipelineId=${pipelineId}&status=all&limit=100`;
+  console.log(`GHL Search URL (Specific): ${url}`);
+  let res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
 
-  console.log(`GHL Search URL: ${url}`);
-  const res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
+  let rawOpps = [];
 
-  if (!res.ok) {
+  if (res.ok) {
+    const data = await res.json();
+    rawOpps = data.opportunities || [];
+    console.log(`Specific search returned ${rawOpps.length} raw opportunities`);
+  } else {
     const text = await res.text();
     console.error(`GHL Search Error (${res.status}):`, text);
-    throw new Error(`GHL search failed (${res.status}): ${text}`);
   }
 
-  const data = await res.json();
-  const rawOpps = data.opportunities || [];
-
-  console.log(`GHL returned ${rawOpps.length} raw opportunities`);
+  // Attempt 2: Broad location search if no results found
+  if (rawOpps.length === 0) {
+    console.log("No opportunities found for specific pipeline, trying broad location search...");
+    url = `${GHL_BASE}/opportunities/search?locationId=${settings.ghl_location_id}&status=all&limit=100`;
+    res = await fetch(url, { headers: ghlHeaders(settings.ghl_api_key) });
+    if (res.ok) {
+      const data = await res.json();
+      const allOpps = data.opportunities || [];
+      // Manually filter by pipeline ID
+      rawOpps = allOpps.filter((o: any) =>
+        (o.pipelineId === pipelineId) || (o.pipeline_id === pipelineId)
+      );
+      console.log(`Broad search found ${allOpps.length} total, ${rawOpps.length} matched pipeline ${pipelineId}`);
+    }
+  }
 
   // Map fields with extreme caution
   const opportunities = rawOpps.map((o: any) => {
-    // Determine Stage ID - GHL v2 is usually pipelineStageId
     const stageId = o.pipelineStageId || o.pipeline_stage_id || o.stageId || o.stage_id;
-
-    // Determine Contact Info
-    let contact = o.contact;
-    if (!contact && (o.contactId || o.contact_id)) {
-      contact = {
+    let contactInfo = o.contact;
+    if (!contactInfo && (o.contactId || o.contact_id)) {
+      contactInfo = {
         id: o.contactId || o.contact_id,
         name: o.contactName || o.contact_name || "Unknown Contact",
         email: o.contactEmail || o.contact_email,
@@ -805,20 +817,15 @@ async function handleGetOpportunities(
       pipelineStageId: stageId,
       status: o.status || "open",
       monetaryValue: o.monetaryValue ?? o.value ?? o.monetary_value ?? 0,
-      contact: contact
+      contact: contactInfo
     };
   });
-
-  // Log a sample if available
-  if (opportunities.length > 0) {
-    console.log("Sample Mapped Opportunity:", JSON.stringify(opportunities[0]).substring(0, 200));
-  }
 
   return {
     opportunities,
     _debug: {
       pipelineId,
-      count: opportunities.length,
+      mappedCount: opportunities.length,
       locationId: settings.ghl_location_id
     }
   };
