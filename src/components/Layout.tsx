@@ -15,12 +15,12 @@ interface LayoutProps {
 }
 
 const NOTIF_TYPE_ICON: Record<string, React.ReactNode> = {
-  'Hot Lead':           <Flame size={13} className="text-red-400" />,
-  'Push Failed':        <XCircle size={13} className="text-orange-400" />,
+  'Hot Lead': <Flame size={13} className="text-red-400" />,
+  'Push Failed': <XCircle size={13} className="text-orange-400" />,
   'Duplicate Detected': <Copy size={13} className="text-zinc-400" />,
-  'Lead Matched':       <Building2 size={13} className="text-cyan-400" />,
-  'Follow-up Due':      <Calendar size={13} className="text-yellow-400" />,
-  'General':            <Bell size={13} className="text-[#1E90FF]" />,
+  'Lead Matched': <Building2 size={13} className="text-cyan-400" />,
+  'Follow-up Due': <Calendar size={13} className="text-yellow-400" />,
+  'General': <Bell size={13} className="text-[#1E90FF]" />,
 };
 
 function getNotifIcon(type?: string) {
@@ -101,7 +101,7 @@ export function Layout({ children, title, subtitle, action }: LayoutProps) {
   return (
     <div className="ssrei-app min-h-screen flex" style={{ backgroundColor: 'var(--bg)' }}>
       <Sidebar />
-      <div className="flex-1 lg:ml-56 flex flex-col min-h-screen">
+      <div className="flex-1 lg:ml-56 flex flex-col min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
         <header
           className="backdrop-blur border-b px-6 lg:px-8 py-4 sticky top-0 z-20"
           style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border)' }}
