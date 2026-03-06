@@ -82,6 +82,7 @@ export interface GHLOpportunity {
     phone?: string;
   };
   customFields?: Array<{ id: string; field_value: string }>;
+  stageName?: string; // Fallback field
 }
 
 export async function getOpportunities(pipelineId: string): Promise<GHLOpportunity[]> {

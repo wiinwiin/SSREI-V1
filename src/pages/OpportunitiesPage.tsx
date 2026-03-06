@@ -133,8 +133,19 @@ export default function OpportunitiesPage() {
     }
   };
 
-  const oppsByStage = (stageId: string) =>
-    opportunities.filter(o => o.pipelineStageId === stageId);
+  const oppsByStage = (stageId: string) => {
+    const stage = stages.find(s => s.id === stageId);
+    return opportunities.filter(o => {
+      // Direct ID match
+      if (o.pipelineStageId === stageId) return true;
+
+      // Fallback: Name match if IDs differ but names match
+      if (stage && o.stageName && o.stageName.toLowerCase() === stage.name.toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+  };
 
   if (loading) {
     return (

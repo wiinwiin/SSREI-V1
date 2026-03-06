@@ -815,6 +815,7 @@ async function handleGetOpportunities(
       name: o.name || o.opportunityName || "Untitled Opportunity",
       pipelineId: o.pipelineId || o.pipeline_id || pipelineId,
       pipelineStageId: stageId,
+      stageName: o.stageName || o.stage_name, // Added for fallback matching
       status: o.status || "open",
       monetaryValue: o.monetaryValue ?? o.value ?? o.monetary_value ?? 0,
       contact: contactInfo
