@@ -7,7 +7,7 @@ import { Toast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
 import { useRouter } from '../context/RouterContext';
 import { getPipelineStages, updateOpportunityStage, type GHLPipelineStage } from '../lib/ghl';
-import { SCORE_TIER_COLORS, STATUS_COLORS } from '../lib/scoring';
+import { SCORE_TIER_COLORS, SCORE_TIER_EMOJIS, STATUS_COLORS } from '../lib/scoring';
 import type { Contact } from '../types';
 
 interface PipelineContact extends Contact {
@@ -471,7 +471,7 @@ function KanbanCard({ contact, isDragging, isUpdating, onDragStart, onDragEnd, o
       <div className="flex items-center gap-1.5 flex-wrap">
         {contact.score_tier && (
           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SCORE_TIER_COLORS[contact.score_tier as keyof typeof SCORE_TIER_COLORS] ?? ''}`}>
-            {contact.score_tier}
+            {SCORE_TIER_EMOJIS[contact.score_tier as keyof typeof SCORE_TIER_EMOJIS]} {contact.score_tier}
           </span>
         )}
         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[statusKey as keyof typeof STATUS_COLORS] ?? 'text-white/40 bg-white/5'}`}>

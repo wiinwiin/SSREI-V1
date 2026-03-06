@@ -225,6 +225,8 @@ export function SettingsPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [editRoleFor, setEditRoleFor] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const loadSettings = async () => {
     const { data } = await supabase.from('app_settings').select('key,value');
@@ -254,6 +256,25 @@ export function SettingsPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionStatus(null);
+    try {
+      const res = await fetch('/api/ghl-proxy?action=get-pipeline-stages');
+      const data = await res.json();
+      if (res.ok && data.stages) {
+        setConnectionStatus({ success: true, message: `Connected successfully! Found pipeline: ${data.pipelineName}` });
+      } else {
+        setConnectionStatus({ success: false, message: data.error || 'Connection failed' });
+      }
+    } catch (err) {
+      setConnectionStatus({ success: false, message: err instanceof Error ? err.message : 'Connection test failed' });
+    } finally {
+      setTestingConnection(false);
+      setTimeout(() => setConnectionStatus(null), 5000);
+    }
   };
 
   const handleToggleActive = async (member: UserProfile) => {
@@ -305,7 +326,7 @@ export function SettingsPage() {
                   </div>
                 </div>
               ))}
-              <div className="pt-2">
+              <div className="pt-2 flex items-center gap-3">
                 <button
                   onClick={handleSave}
                   disabled={saving}
@@ -314,7 +335,21 @@ export function SettingsPage() {
                   {saved ? <Check size={14} /> : <Save size={14} />}
                   {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
                 </button>
+                <button
+                  onClick={handleTestConnection}
+                  disabled={testingConnection || !settings.api_key || !settings.location_id || !settings.pipeline_id}
+                  className="flex items-center gap-2 border text-sm font-medium px-5 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                >
+                  {testingConnection ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check size={14} />}
+                  {testingConnection ? 'Testing...' : 'Test Connection'}
+                </button>
               </div>
+              {connectionStatus && (
+                <div className={`mt-3 px-4 py-2.5 rounded-xl text-sm ${connectionStatus.success ? 'bg-emerald-900/20 text-emerald-400 border border-emerald-700/40' : 'bg-red-900/20 text-red-400 border border-red-700/40'}`}>
+                  {connectionStatus.message}
+                </div>
+              )}
             </div>
           )}
         </div>

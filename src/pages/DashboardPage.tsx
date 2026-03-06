@@ -6,6 +6,13 @@ import { useRouter } from '../context/RouterContext';
 import { SCORE_TIER_COLORS } from '../lib/scoring';
 import type { Contact, ImportBatch, ContactActivityLog } from '../types';
 
+const getContactDisplayName = (contact: Contact | { first_name?: string; last_name?: string; property_name?: string; lead_type?: string }): string => {
+  if (contact.lead_type === 'commercial') {
+    return contact.property_name || 'Unknown Property';
+  }
+  return `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim() || 'Unknown Contact';
+};
+
 function timeAgo(dateStr?: string) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -72,10 +79,10 @@ export function DashboardPage() {
         supabase.from('contacts').select('*', { count: 'exact', head: true }).gte('distress_score', 15),
         supabase.from('contacts').select('*', { count: 'exact', head: true }).eq('pushed_to_ghl', true),
         supabase.from('contacts').select('*', { count: 'exact', head: true }).eq('dnc_toggle', true),
-        supabase.from('contacts').select('id,first_name,last_name,property_address,property_city,property_state,distress_score,score_tier,overall_status').order('distress_score', { ascending: false }).limit(5),
+        supabase.from('contacts').select('id,first_name,last_name,property_name,lead_type,property_address,property_city,property_state,distress_score,score_tier,overall_status').order('distress_score', { ascending: false }).limit(5),
         supabase.from('import_batches').select('*').order('uploaded_at', { ascending: false }).limit(1),
-        supabase.from('contact_activity_logs').select('*,contacts(first_name,last_name,property_address)').order('action_at', { ascending: false }).limit(5),
-        supabase.from('contacts').select('id,first_name,last_name,property_address,property_city,property_state,distress_score,score_tier').eq('follow_up_date', today),
+        supabase.from('contact_activity_logs').select('*,contacts(first_name,last_name,property_name,lead_type,property_address)').order('action_at', { ascending: false }).limit(5),
+        supabase.from('contacts').select('id,first_name,last_name,property_name,lead_type,property_address,property_city,property_state,distress_score,score_tier').eq('follow_up_date', today),
         supabase.from('app_settings').select('key,value'),
         supabase.from('import_batches').select('*', { count: 'exact', head: true }),
         supabase.from('contacts').select('*', { count: 'exact', head: true }).eq('pushed_to_ghl', true),
@@ -167,7 +174,7 @@ export function DashboardPage() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="text-white text-sm font-medium truncate">
-                        {c.first_name} {c.last_name}
+                        {getContactDisplayName(c)}
                       </div>
                       <div className="text-white/40 text-xs truncate">
                         {c.property_address}{c.property_city ? `, ${c.property_city}` : ''}{c.property_state ? `, ${c.property_state}` : ''}
@@ -234,7 +241,7 @@ export function DashboardPage() {
                     <div className="w-1.5 h-1.5 bg-[#1E90FF] rounded-full mt-2 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-white text-xs truncate">
-                        <span className="font-medium">{log.contacts?.first_name} {log.contacts?.last_name}</span>
+                        <span className="font-medium">{log.contacts ? getContactDisplayName(log.contacts) : 'Unknown'}</span>
                         <span className="text-white/40"> — {log.action}</span>
                       </div>
                       {log.action_detail && (
@@ -266,7 +273,7 @@ export function DashboardPage() {
                     className="w-full flex items-center gap-3 p-3 bg-[#0A1628] hover:bg-white/5 rounded-lg text-left transition-colors"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-white text-sm font-medium">{c.first_name} {c.last_name}</div>
+                      <div className="text-white text-sm font-medium">{getContactDisplayName(c)}</div>
                       <div className="text-white/40 text-xs truncate">{c.property_address}</div>
                     </div>
                     {c.score_tier && (

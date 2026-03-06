@@ -68,3 +68,36 @@ export async function updateOpportunityStage(opportunityId: string, stageId: str
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'GHL update opportunity stage failed');
 }
+
+export interface GHLOpportunity {
+  id: string;
+  name: string;
+  pipelineStageId: string;
+  status: string;
+  monetaryValue?: number;
+  contact?: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+  };
+  customFields?: Array<{ id: string; field_value: string }>;
+}
+
+export async function getOpportunities(pipelineId: string): Promise<GHLOpportunity[]> {
+  const res = await fetch(`${PROXY_URL}?action=get-opportunities&pipelineId=${encodeURIComponent(pipelineId)}`, {
+    method: 'GET',
+    headers: JSON_HEADERS,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'GHL fetch opportunities failed');
+  return data.opportunities || [];
+}
+
+export async function bulkUpdateOpportunityStage(opportunityIds: string[], stageId: string): Promise<void> {
+  await Promise.all(opportunityIds.map(id => updateOpportunityStage(id, stageId)));
+}
+
+export async function bulkDeleteOpportunities(opportunityIds: string[]): Promise<void> {
+  await Promise.all(opportunityIds.map(id => deleteOpportunityFromGHL(id)));
+}

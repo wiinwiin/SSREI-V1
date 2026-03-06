@@ -27,6 +27,7 @@ export function LeadListPage() {
   const { navigate } = useRouter();
   const [search, setSearch] = useState('');
   const [dispositionFilter, setDispositionFilter] = useState<Disposition | ''>('');
+  const [leadTypeFilter, setLeadTypeFilter] = useState<'acquisition' | 'commercial' | ''>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
@@ -49,6 +50,7 @@ export function LeadListPage() {
       );
     }
     if (dispositionFilter) result = result.filter(l => l.disposition === dispositionFilter);
+    if (leadTypeFilter) result = result.filter(l => l.lead_type === leadTypeFilter);
     if (dateFrom) result = result.filter(l => l.follow_up_date && l.follow_up_date >= dateFrom);
     if (dateTo) result = result.filter(l => l.follow_up_date && l.follow_up_date <= dateTo);
     result.sort((a, b) => {
@@ -57,7 +59,7 @@ export function LeadListPage() {
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return result;
-  }, [leads, search, dispositionFilter, dateFrom, dateTo, sortKey, sortDir]);
+  }, [leads, search, dispositionFilter, leadTypeFilter, dateFrom, dateTo, sortKey, sortDir]);
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -121,14 +123,26 @@ export function LeadListPage() {
             >
               <Filter size={15} />
               Filters
-              {(dispositionFilter || dateFrom || dateTo) && (
+              {(dispositionFilter || leadTypeFilter || dateFrom || dateTo) && (
                 <span className="w-2 h-2 bg-[#1E6FA4] rounded-full" />
               )}
             </button>
           </div>
 
           {showFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block font-body text-xs font-medium text-gray-600 mb-1.5">Lead Type</label>
+                <select
+                  value={leadTypeFilter}
+                  onChange={e => setLeadTypeFilter(e.target.value as 'acquisition' | 'commercial' | '')}
+                  className="w-full font-body text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1E6FA4]/30"
+                >
+                  <option value="">All Types</option>
+                  <option value="acquisition">Acquisition (Residential)</option>
+                  <option value="commercial">Commercial</option>
+                </select>
+              </div>
               <div>
                 <label className="block font-body text-xs font-medium text-gray-600 mb-1.5">Disposition</label>
                 <select
@@ -158,9 +172,9 @@ export function LeadListPage() {
                   className="w-full font-body text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1E6FA4]/30"
                 />
               </div>
-              {(dispositionFilter || dateFrom || dateTo) && (
+              {(dispositionFilter || leadTypeFilter || dateFrom || dateTo) && (
                 <button
-                  onClick={() => { setDispositionFilter(''); setDateFrom(''); setDateTo(''); }}
+                  onClick={() => { setDispositionFilter(''); setLeadTypeFilter(''); setDateFrom(''); setDateTo(''); }}
                   className="font-body text-xs text-[#1E6FA4] hover:underline text-left"
                 >
                   Clear filters

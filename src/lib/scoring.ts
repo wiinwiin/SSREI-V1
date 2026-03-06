@@ -44,6 +44,14 @@ export function computeDistressScore(row: CSVRow): { score: number; tier: ScoreT
   return { score, tier, flags };
 }
 
+export const SCORE_TIER_EMOJIS: Record<ScoreTier, string> = {
+  'Hot': '🔥',
+  'Warm': '☀️',
+  'Lukewarm': '🌤️',
+  'Cold': '❄️',
+  'No Signal': '⚫',
+};
+
 export function detectDNCLitigator(row: CSVRow): { dnc: boolean; litigator: boolean } {
   const dncFields = [
     'Contact1Phone_1_DNC', 'Contact1Phone_2_DNC', 'Contact1Phone_3_DNC',
@@ -62,9 +70,8 @@ export function detectDNCLitigator(row: CSVRow): { dnc: boolean; litigator: bool
   return { dnc, litigator };
 }
 
-export function determineOverallStatus(dnc: boolean, litigator: boolean, isDuplicate: boolean): OverallStatus {
+export function determineOverallStatus(dnc: boolean, litigator: boolean): OverallStatus {
   if (litigator) return 'Litigator';
-  if (isDuplicate) return 'Duplicate';
   if (dnc) return 'DNC';
   return 'Clean';
 }

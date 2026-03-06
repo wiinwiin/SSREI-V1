@@ -10,11 +10,33 @@ import { Toast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
 import { useRouter } from '../context/RouterContext';
 import { useAuth } from '../context/AuthContext';
-import { SCORE_TIER_COLORS, STATUS_COLORS, computeDistressScore, determineOverallStatus, detectDNCLitigator } from '../lib/scoring';
-import { pushContactToGHL, syncDNCToGHL } from '../lib/ghl';
+import { SCORE_TIER_COLORS, SCORE_TIER_EMOJIS, STATUS_COLORS, computeDistressScore, determineOverallStatus, detectDNCLitigator } from '../lib/scoring';
+import { pushContactToGHL, syncDNCToGHL, deleteOpportunityFromGHL } from '../lib/ghl';
 import type { Contact, SavedFilter } from '../types';
+import { ExportModal } from '../components/ExportModal';
+import { ContactDetailModal } from '../components/ContactDetailModal';
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
+
+const getContactDisplayName = (contact: Contact): string => {
+  if (contact.lead_type === 'commercial') {
+    return contact.property_name || 'Unknown Property';
+  }
+  return `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim() || 'Unknown Contact';
+};
+
+/** Returns the first callable (non-DNC) phone across contacts_json or flat fields */
+const getFirstCallablePhone = (c: Contact): string => {
+  if (c.contacts_json && c.contacts_json.length > 0) {
+    for (const ce of c.contacts_json) {
+      for (const p of ce.phones) {
+        if (!p.dnc) return p.number;
+      }
+    }
+    return c.contacts_json[0]?.phones[0]?.number || '';
+  }
+  return c.contact1_phone1 || '';
+};
 
 const DISTRESS_FLAG_OPTIONS = [
   'Absentee Owner', 'Foreclosure', 'Delinquent Tax', 'High Equity',
@@ -36,6 +58,7 @@ const DISTRESS_FLAG_KEYS: Record<string, keyof Contact> = {
 interface Filters {
   search: string;
   status: string;
+  leadType: string;
   tier: string;
   state: string;
   city: string;
@@ -52,7 +75,7 @@ interface Filters {
 }
 
 const DEFAULT_FILTERS: Filters = {
-  search: '', status: '', tier: '', state: '', city: '', county: '',
+  search: '', status: '', leadType: '', tier: '', state: '', city: '', county: '',
   pushed: '', source: '', priority: '', distressFlags: [], tags: [],
   dateFrom: '', dateTo: '', batchId: '', dnc: '',
 };
@@ -240,30 +263,7 @@ function ConfirmModal({ title, message, confirmLabel, onClose, onConfirm, danger
   );
 }
 
-function exportToCSV(contacts: Contact[]) {
-  const headers = ['Name', 'Property Address', 'City', 'State', 'Phone', 'Email', 'Score', 'Tier', 'Status', 'DNC', 'GHL Status', 'Source', 'Priority'];
-  const rows = contacts.map(c => [
-    `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim(),
-    c.property_address ?? '',
-    c.property_city ?? '',
-    c.property_state ?? '',
-    c.contact1_phone1 ?? '',
-    c.contact1_email1 ?? '',
-    c.distress_score ?? 0,
-    c.score_tier ?? '',
-    c.overall_status ?? '',
-    c.dnc_toggle ? 'Yes' : 'No',
-    c.pushed_to_ghl ? 'Pushed' : 'Not Pushed',
-    c.source ?? '',
-    c.priority_flag ? 'Yes' : 'No',
-  ]);
-  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `SSREI_contacts_${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
-}
+// Removed exportToCSV inline function, now handled by ExportModal
 
 export function ContactsPage() {
   const { navigate } = useRouter();
@@ -275,6 +275,7 @@ export function ContactsPage() {
   const [sortBy, setSortBy] = useState<'distress_score' | 'created_at' | 'first_name'>('distress_score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [pushing, setPushing] = useState<string | null>(null);
   const [dncToggling, setDncToggling] = useState<string | null>(null);
@@ -287,6 +288,10 @@ export function ContactsPage() {
   const [showBulkPushConfirm, setShowBulkPushConfirm] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBulkDNCConfirm, setShowBulkDNCConfirm] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData, setExportData] = useState<Contact[]>([]);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [distressOpen, setDistressOpen] = useState(false);
@@ -303,9 +308,10 @@ export function ContactsPage() {
   const buildQuery = useCallback((q: ReturnType<typeof supabase.from>) => {
     let qb = q as ReturnType<typeof supabase.from<'contacts'>['select']>;
     if (filters.search) {
-      qb = qb.or(`first_name.ilike.%${filters.search}%,last_name.ilike.%${filters.search}%,property_address.ilike.%${filters.search}%,contact1_phone1.ilike.%${filters.search}%,contact1_email1.ilike.%${filters.search}%`);
+      qb = qb.or(`first_name.ilike.%${filters.search}%,last_name.ilike.%${filters.search}%,property_name.ilike.%${filters.search}%,property_address.ilike.%${filters.search}%,contact1_phone1.ilike.%${filters.search}%,contact1_email1.ilike.%${filters.search}%`);
     }
     if (filters.status) qb = qb.eq('overall_status', filters.status);
+    if (filters.leadType) qb = qb.eq('lead_type', filters.leadType);
     if (filters.tier) qb = qb.eq('score_tier', filters.tier);
     if (filters.state) qb = qb.eq('property_state', filters.state);
     if (filters.city) qb = qb.ilike('property_city', `%${filters.city}%`);
@@ -334,12 +340,12 @@ export function ContactsPage() {
     setLoading(true);
     let q = supabase.from('contacts').select('*', { count: 'exact' });
     q = buildQuery(q as unknown as ReturnType<typeof supabase.from>) as unknown as typeof q;
-    q = q.order(sortBy, { ascending: sortDir === 'asc' }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    q = q.order(sortBy, { ascending: sortDir === 'asc' }).range(page * pageSize, (page + 1) * pageSize - 1);
     const { data, count } = await q;
     setContacts((data ?? []) as Contact[]);
     setTotal(count ?? 0);
     setLoading(false);
-  }, [buildQuery, sortBy, sortDir, page]);
+  }, [buildQuery, sortBy, sortDir, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -410,7 +416,7 @@ export function ContactsPage() {
       showToast('Contact pushed to GHL');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Push failed';
-      await supabase.from('notifications').insert({ type: 'Push Failed', message: `Failed to push ${contact.first_name} ${contact.last_name}: ${msg}`, contact_id: contact.id });
+      await supabase.from('notifications').insert({ type: 'Push Failed', message: `Failed to push ${getContactDisplayName(contact)}: ${msg}`, contact_id: contact.id });
       showToast('GHL push failed', 'error');
     }
     setPushing(null);
@@ -478,7 +484,26 @@ export function ContactsPage() {
   const handleBulkDelete = async () => {
     setShowBulkDeleteConfirm(false);
     setBulkLoading(true);
-    await supabase.from('contacts').delete().in('id', Array.from(selected));
+
+    const selectedIds = Array.from(selected);
+    const { data: contactsToDelete } = await supabase
+      .from('contacts')
+      .select('id, ghl_opportunity_id')
+      .in('id', selectedIds);
+
+    if (contactsToDelete) {
+      for (const contact of contactsToDelete) {
+        if (contact.ghl_opportunity_id) {
+          try {
+            await deleteOpportunityFromGHL(contact.ghl_opportunity_id);
+          } catch (err) {
+            console.error('Failed to delete opportunity from GHL:', err);
+          }
+        }
+      }
+    }
+
+    await supabase.from('contacts').delete().in('id', selectedIds);
     setBulkLoading(false);
     setSelected(new Set());
     load();
@@ -486,10 +511,18 @@ export function ContactsPage() {
   };
 
   const handleExport = async () => {
-    let q = supabase.from('contacts').select('*').limit(10000);
-    q = buildQuery(q as unknown as ReturnType<typeof supabase.from>) as unknown as typeof q;
-    const { data } = await q;
-    exportToCSV((data ?? []) as Contact[]);
+    setShowExportModal(true);
+    setExportLoading(true);
+    try {
+      let q = supabase.from('contacts').select('*').limit(10000);
+      q = buildQuery(q as unknown as ReturnType<typeof supabase.from>) as unknown as typeof q;
+      const { data } = await q;
+      setExportData((data ?? []) as Contact[]);
+    } catch (e) {
+      showToast('Error fetching contacts for export', 'error');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const handleSaveFilter = async (name: string) => {
@@ -599,7 +632,14 @@ export function ContactsPage() {
               <select value={filters.status} onChange={e => setFilter('status', e.target.value)}
                 className="rounded-lg px-3 py-1.5 text-sm focus:outline-none" style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
                 <option value="">All Status</option>
-                {['Clean', 'DNC', 'Litigator', 'Duplicate'].map(o => <option key={o}>{o}</option>)}
+                {['Clean', 'DNC', 'Litigator'].map(o => <option key={o}>{o}</option>)}
+              </select>
+              {/* Lead Type */}
+              <select value={filters.leadType} onChange={e => setFilter('leadType', e.target.value)}
+                className="rounded-lg px-3 py-1.5 text-sm focus:outline-none" style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                <option value="">All Lead Types</option>
+                <option value="commercial">Commercial</option>
+                <option value="acquisition">Acquisitions</option>
               </select>
               {/* Score Tier */}
               <select value={filters.tier} onChange={e => setFilter('tier', e.target.value)}
@@ -775,6 +815,7 @@ export function ContactsPage() {
                   <th className="text-left px-4 py-3"><SortHeader col="first_name" label="Owner" /></th>
                   <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Address</th>
                   <th className="text-left px-4 py-3"><SortHeader col="distress_score" label="Score" /></th>
+                  <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Sellability</th>
                   <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Status</th>
                   <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>DNC</th>
                   <th className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Disposition</th>
@@ -788,20 +829,22 @@ export function ContactsPage() {
                 {loading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                      {Array.from({ length: 12 }).map((_, j) => (
+                      {Array.from({ length: 13 }).map((_, j) => (
                         <td key={j} className="px-4 py-3"><div className="h-4 rounded animate-pulse" style={{ background: 'var(--bg-card)' }} /></td>
                       ))}
                     </tr>
                   ))
                 ) : contacts.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-4 py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                    <td colSpan={13} className="px-4 py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                       No contacts found.
                     </td>
                   </tr>
                 ) : contacts.map(c => (
-                  <tr key={c.id} onClick={() => navigate('contact-detail', c.id)}
+                  <tr key={c.id}
+                    onClick={() => setSelectedContact(c)}
                     className="cursor-pointer transition-colors"
+                    title={`${getContactDisplayName(c)}${getFirstCallablePhone(c) ? ' · ' + getFirstCallablePhone(c) : ''}`}
                     style={{ borderBottom: '1px solid var(--border)', background: selected.has(c.id) ? 'rgba(30,111,164,0.08)' : undefined }}
                     onMouseEnter={e => { if (!selected.has(c.id)) (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = selected.has(c.id) ? 'rgba(30,111,164,0.08)' : ''; }}
@@ -819,7 +862,7 @@ export function ContactsPage() {
                     </td>
                     {/* Owner */}
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{c.first_name} {c.last_name}</div>
+                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{getContactDisplayName(c)}</div>
                       {c.contact1_phone1 && <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.contact1_phone1}</div>}
                     </td>
                     {/* Address */}
@@ -834,10 +877,33 @@ export function ContactsPage() {
                       <div className="flex items-center gap-2">
                         {c.score_tier && (
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_TIER_COLORS[c.score_tier as keyof typeof SCORE_TIER_COLORS] ?? ''}`}>
-                            {c.score_tier}
+                            {SCORE_TIER_EMOJIS[c.score_tier as keyof typeof SCORE_TIER_EMOJIS]} {c.score_tier}
                           </span>
                         )}
                         <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{c.distress_score ?? 0}</span>
+                      </div>
+                    </td>
+                    {/* Sellability Scores */}
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1.5">
+                        {c.retail_sellability_score && (
+                          <div className="flex flex-col items-center px-1.5 py-1 rounded" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            <div className="text-[10px] font-bold" style={{ color: '#22c55e' }}>{c.retail_sellability_score}°</div>
+                            <div className="text-[9px]" style={{ color: 'rgba(34,197,94,0.7)' }}>Retail</div>
+                          </div>
+                        )}
+                        {c.rental_sellability_score && (
+                          <div className="flex flex-col items-center px-1.5 py-1 rounded" style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                            <div className="text-[10px] font-bold" style={{ color: '#eab308' }}>{c.rental_sellability_score}°</div>
+                            <div className="text-[9px]" style={{ color: 'rgba(234,179,8,0.7)' }}>Rental</div>
+                          </div>
+                        )}
+                        {c.wholesale_sellability_score && (
+                          <div className="flex flex-col items-center px-1.5 py-1 rounded" style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.2)' }}>
+                            <div className="text-[10px] font-bold" style={{ color: '#a855f7' }}>{c.wholesale_sellability_score}°</div>
+                            <div className="text-[9px]" style={{ color: 'rgba(168,85,247,0.7)' }}>Whsl</div>
+                          </div>
+                        )}
                       </div>
                     </td>
                     {/* Status */}
@@ -853,8 +919,8 @@ export function ContactsPage() {
                       {dncToggling === c.id
                         ? <Loader2 size={16} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
                         : c.dnc_toggle
-                        ? <ToggleRight size={20} className="text-orange-400" />
-                        : <ToggleLeft size={20} style={{ color: 'var(--text-muted)' }} />
+                          ? <ToggleRight size={20} className="text-orange-400" />
+                          : <ToggleLeft size={20} style={{ color: 'var(--text-muted)' }} />
                       }
                     </td>
                     {/* Disposition */}
@@ -887,7 +953,7 @@ export function ContactsPage() {
                           className="transition-colors hover:opacity-70" style={{ color: 'var(--text-muted)' }}>
                           <ChevronRight size={15} />
                         </button>
-                        {!c.pushed_to_ghl && c.overall_status !== 'Litigator' && c.overall_status !== 'Duplicate' && (
+                        {!c.pushed_to_ghl && c.overall_status !== 'Litigator' && (
                           <button onClick={e => handlePush(c, e)} disabled={pushing === c.id} title="Push to GHL"
                             className="transition-colors hover:text-emerald-400 disabled:opacity-40" style={{ color: 'var(--text-muted)' }}>
                             {pushing === c.id ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
@@ -901,16 +967,35 @@ export function ContactsPage() {
             </table>
           </div>
 
-          {total > PAGE_SIZE && (
+          {total > 0 && (
             <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(0);
+                  }}
+                  className="bg-[#0A1628] border border-white/10 rounded px-2 py-1 text-xs text-white/80"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                  <option value={500}>500</option>
+                </select>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total.toLocaleString()}
+                </span>
+              </div>
               <div className="flex gap-2">
                 <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                  className="text-sm transition-colors disabled:opacity-25" style={{ color: 'var(--text-secondary)' }}>Previous</button>
-                <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= total}
-                  className="text-sm transition-colors disabled:opacity-25" style={{ color: 'var(--text-secondary)' }}>Next</button>
+                  className="text-sm transition-colors disabled:opacity-25" style={{ color: 'var(--text-secondary)' }}>◀ Previous</button>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Page {page + 1} of {Math.ceil(total / pageSize)}</span>
+                <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * pageSize >= total}
+                  className="text-sm transition-colors disabled:opacity-25" style={{ color: 'var(--text-secondary)' }}>Next ▶</button>
               </div>
             </div>
           )}
@@ -949,6 +1034,25 @@ export function ContactsPage() {
           danger
         />
       )}
+
+      {showExportModal && (
+        <ExportModal
+          contacts={exportData}
+          loading={exportLoading}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
+
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
+          onUpdated={updated => {
+            setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
+          }}
+        />
+      )}
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </Layout>
   );

@@ -1,48 +1,122 @@
 import type { CSVRow } from '../types';
 
 export function parseCSV(text: string): CSVRow[] {
-  const lines = text.split(/\r?\n/);
-  if (lines.length < 2) return [];
-
-  const headers = parseCSVLine(lines[0]);
-  const rows: CSVRow[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const values = parseCSVLine(line);
-    const row: CSVRow = {};
-    headers.forEach((h, idx) => {
-      row[h.trim()] = values[idx]?.trim() ?? '';
-    });
-    rows.push(row);
-  }
-
-  return rows;
-}
-
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
+  // Robust CSV parser that handles multi-line fields, quotes, and all edge cases
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
   let inQuotes = false;
+  let i = 0;
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
+  while (i < text.length) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          // Escaped quote
+          currentField += '"';
+          i += 2;
+          continue;
+        } else {
+          // End of quoted field
+          inQuotes = false;
+          i++;
+          continue;
+        }
       } else {
-        inQuotes = !inQuotes;
+        // Any character inside quotes (including newlines)
+        currentField += char;
+        i++;
+        continue;
       }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
     } else {
-      current += ch;
+      if (char === '"') {
+        // Start of quoted field
+        inQuotes = true;
+        i++;
+        continue;
+      } else if (char === ',') {
+        // End of field
+        currentRow.push(currentField);
+        currentField = '';
+        i++;
+        continue;
+      } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+        // End of row
+        currentRow.push(currentField);
+        if (currentRow.some(f => f.trim())) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentField = '';
+        i += (char === '\r' && nextChar === '\n') ? 2 : 1;
+        continue;
+      } else if (char === '\r') {
+        // Mac-style line ending
+        currentRow.push(currentField);
+        if (currentRow.some(f => f.trim())) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentField = '';
+        i++;
+        continue;
+      } else {
+        currentField += char;
+        i++;
+        continue;
+      }
     }
   }
-  result.push(current);
+
+  // Handle last field and row
+  if (currentField || currentRow.length > 0) {
+    currentRow.push(currentField);
+    // Only skip completely empty rows (all fields are empty strings)
+    const hasAnyContent = currentRow.some(f => f && f.trim().length > 0);
+    if (hasAnyContent) {
+      rows.push(currentRow);
+    }
+  }
+
+  console.log(`CSV Parser: Found ${rows.length} total rows (including header)`);
+
+  if (rows.length < 2) {
+    console.warn('CSV has no data rows');
+    return [];
+  }
+
+  // Parse headers - first row
+  const headerRow = rows[0];
+  const headers = headerRow.map(h => h.replace(/^"|"$/g, '').trim());
+  console.log(`CSV Parser: Headers (${headers.length}): ${headers.slice(0, 10).join(', ')}...`);
+
+  // Parse data rows - all subsequent rows
+  const result: CSVRow[] = [];
+  for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+    const values = rows[rowIdx];
+
+    // Skip ONLY if this row has fewer fields than headers AND all are empty
+    // This handles trailing empty lines in the CSV
+    const rowHasContent = values.some(v => v && v.trim().length > 0);
+    if (!rowHasContent && values.length < headers.length) {
+      console.log(`CSV Parser: Skipping empty row ${rowIdx}`);
+      continue;
+    }
+
+    const row: CSVRow = {};
+    headers.forEach((header, idx) => {
+      const value = values[idx] || '';
+      // Remove surrounding quotes and trim
+      row[header] = value.replace(/^"|"$/g, '').trim();
+    });
+
+    result.push(row);
+  }
+
+  console.log(`CSV Parser: Successfully parsed ${result.length} data rows from ${rows.length - 1} total rows (excluding header)`);
   return result;
 }
 
@@ -187,5 +261,68 @@ export function mapCSVRowToContact(row: CSVRow) {
     mls_prev_source: row['MLS_Prev_Source'] || undefined,
     mls_prev_agent_name: row['MLS_Prev_ListAgentName'] || undefined,
     mls_prev_office: row['MLS_Prev_ListAgentOffice'] || undefined,
+
+    retail_score: parseNum(row['RetailScore']),
+    rental_score: parseNum(row['RentalScore']),
+    wholesale_score: parseNum(row['WholesaleScore']),
+    property_name: row['PropertyName'] || undefined,
+    asking_price: parseNum(row['AskingPrice']),
   };
 }
+
+/**
+ * Builds the three JSONB columns from flat CSV contact fields.
+ * Returns contacts_json, dnc_flags, non_dnc_count.
+ */
+export function buildContactsJson(row: CSVRow, rowDnc: boolean) {
+  const parseBool = (v?: string) => {
+    if (!v) return false;
+    const s = v.trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes';
+  };
+
+  const contacts_json: {
+    name: string; type: string;
+    phones: { number: string; phoneType: string; dnc: boolean }[];
+    emails: string[];
+    dnc: boolean;
+  }[] = [];
+
+  const dnc_flags: { phone: string; dnc: boolean }[] = [];
+
+  for (const prefix of ['Contact1', 'Contact2', 'Contact3']) {
+    const name = row[`${prefix}Name`];
+    const type = row[`${prefix}Type`] || 'Landlord';
+
+    const phones: { number: string; phoneType: string; dnc: boolean }[] = [];
+    for (const i of ['1', '2', '3']) {
+      const num = row[`${prefix}Phone_${i}`];
+      if (!num) continue;
+      const phoneType = row[`${prefix}Phone_${i}_Type`] || '';
+      // Check specific DNC column, fall back to row-level DNC
+      const dncCol = row[`${prefix}Phone_${i}_DNC`];
+      const isPhoneDnc = dncCol !== undefined ? parseBool(dncCol) : rowDnc;
+      phones.push({ number: num, phoneType, dnc: isPhoneDnc });
+      dnc_flags.push({ phone: num, dnc: isPhoneDnc });
+    }
+
+    const emails: string[] = [];
+    for (const i of ['1', '2', '3']) {
+      const email = row[`${prefix}Email_${i}`];
+      if (email) emails.push(email);
+    }
+
+    if (!name && phones.length === 0 && emails.length === 0) continue;
+
+    // Contact-level DNC: true if all phones are DNC OR row is DNC and no phone-specific override
+    const allPhonesDnc = phones.length > 0 && phones.every(p => p.dnc);
+    const contactDnc = phones.length === 0 ? rowDnc : allPhonesDnc;
+
+    contacts_json.push({ name: name || '', type, phones, emails, dnc: contactDnc });
+  }
+
+  const non_dnc_count = dnc_flags.filter(f => !f.dnc).length;
+
+  return { contacts_json, dnc_flags, non_dnc_count };
+}
+

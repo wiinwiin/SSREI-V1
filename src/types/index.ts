@@ -62,7 +62,9 @@ export type Page =
   | 'contacts'
   | 'contact-detail'
   | 'pipeline'
+  | 'opportunities'
   | 'buyers'
+  | 'sellers'
   | 'activity-log'
   | 'notifications'
   | 'settings';
@@ -73,11 +75,20 @@ export interface RouterState {
 }
 
 export type ScoreTier = 'Hot' | 'Warm' | 'Lukewarm' | 'Cold' | 'No Signal';
-export type OverallStatus = 'Clean' | 'DNC' | 'Litigator' | 'Duplicate';
+export type OverallStatus = 'Clean' | 'DNC' | 'Litigator';
 export type OfferStatus = 'Pending' | 'Accepted' | 'Rejected' | 'Countered';
 export type DocumentType = 'LOI' | 'Purchase Agreement' | 'Inspection Report' | 'Contract' | 'Other';
 export type NotificationType = 'Hot Lead' | 'Push Failed' | 'Duplicate Detected' | 'General';
 export type BatchStatus = 'Processing' | 'Complete' | 'Failed';
+
+/** Per-person entry stored in the contacts_json JSONB column */
+export interface ContactEntry {
+  name: string;
+  type: string;
+  phones: { number: string; phoneType: string; dnc: boolean }[];
+  emails: string[];
+  dnc: boolean; // true if ALL phones are DNC (or row-level DNC)
+}
 
 export interface Contact {
   id: string;
@@ -157,7 +168,15 @@ export interface Contact {
   contact3_email2?: string;
   contact3_email3?: string;
 
+  // Parsed contacts JSONB array (populated at import from contact1/2/3 fields)
+  contacts_json?: ContactEntry[];
+  // Array of { phone, dnc } for each phone, used for GIN index querying
+  dnc_flags?: { phone: string; dnc: boolean }[];
+  // Count of contacts with dnc=false and a valid phone
+  non_dnc_count?: number;
+
   dnc_toggle?: boolean;
+
   litigator?: boolean;
   overall_status?: string;
   distress_score?: number;
@@ -226,6 +245,16 @@ export interface Contact {
   skip_traced?: boolean;
   source?: string;
   source_detail?: string;
+  asking_price?: number;
+  lead_source_detail?: string;
+  lead_type?: 'commercial' | 'acquisition';
+  property_name?: string;
+  retail_score?: number;
+  rental_score?: number;
+  wholesale_score?: number;
+  retail_sellability_score?: number;
+  rental_sellability_score?: number;
+  wholesale_sellability_score?: number;
   created_by?: string;
   pushed_to_ghl?: boolean;
   ghl_contact_id?: string;
@@ -353,4 +382,118 @@ export interface ProcessedRow {
   status: OverallStatus;
   distress_score: number;
   score_tier: ScoreTier;
+}
+
+export type Disposition =
+  | 'Customer Reached'
+  | 'No Answer'
+  | 'Left Voicemail'
+  | 'Callback Requested'
+  | 'Not Interested'
+  | 'Wrong Number'
+  | 'Follow Up'
+  | 'Bad Email'
+  | 'DNC';
+
+export interface Lead {
+  id: string;
+  owner_name: string;
+  phone: string;
+  email: string;
+  dnc: boolean;
+  owner_type: 'Individual' | 'LLC' | 'Corporation' | 'Trust';
+  lead_type: 'acquisition' | 'commercial';
+  length_of_ownership: string;
+  estimated_equity: string;
+  absentee_owner: boolean;
+  out_of_state_owner: boolean;
+  mailing_address: string;
+  property_address: string;
+  city: string;
+  state: string;
+  zip: string;
+  home_type: 'Single Family' | 'Multifamily' | 'Duplex' | 'Triplex' | 'Apartment' | 'Other';
+  square_feet: string;
+  beds: string;
+  baths: string;
+  units: string;
+  stories: string;
+  county: string;
+  zoning: string;
+  parcel_number: string;
+  lot_size: string;
+  hoa: boolean;
+  property_taxes: string;
+  last_sale_date: string;
+  last_sale_price: string;
+  mortgage_amount: string;
+  mortgage_balance: string;
+  ltv: string;
+  avm: string;
+  rental_value: string;
+  assessed_value: string;
+  retail_value_estimate: string;
+  rental_value_estimate: string;
+  wholesale_value_estimate: string;
+  retail_sellability_score: string;
+  rental_sellability_score: string;
+  wholesale_sellability_score: string;
+  disposition: Disposition;
+  notes: string;
+  follow_up_date: string | null;
+  submitted_by: string;
+  ghl_contact_id: string;
+  ghl_opportunity_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LeadFormData {
+  owner_name: string;
+  phone: string;
+  email: string;
+  dnc: boolean;
+  owner_type: 'Individual' | 'LLC' | 'Corporation' | 'Trust';
+  lead_type: 'acquisition' | 'commercial';
+  length_of_ownership: string;
+  estimated_equity: string;
+  absentee_owner: boolean;
+  out_of_state_owner: boolean;
+  mailing_address: string;
+  property_address: string;
+  city: string;
+  state: string;
+  zip: string;
+  home_type: 'Single Family' | 'Multifamily' | 'Duplex' | 'Triplex' | 'Apartment' | 'Other';
+  square_feet: string;
+  beds: string;
+  baths: string;
+  units: string;
+  stories: string;
+  county: string;
+  zoning: string;
+  parcel_number: string;
+  lot_size: string;
+  hoa: boolean;
+  property_taxes: string;
+  last_sale_date: string;
+  last_sale_price: string;
+  mortgage_amount: string;
+  mortgage_balance: string;
+  ltv: string;
+  avm: string;
+  rental_value: string;
+  assessed_value: string;
+  retail_value_estimate: string;
+  rental_value_estimate: string;
+  wholesale_value_estimate: string;
+  retail_sellability_score: string;
+  rental_sellability_score: string;
+  wholesale_sellability_score: string;
+  disposition: Disposition;
+  notes: string;
+  follow_up_date: string | null;
+  submitted_by: string;
+  ghl_contact_id: string;
+  ghl_opportunity_id: string;
 }

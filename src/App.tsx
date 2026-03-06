@@ -8,7 +8,9 @@ import { LeadImportPage } from './pages/LeadImportPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { PipelinePage } from './pages/PipelinePage';
+import OpportunitiesPage from './pages/OpportunitiesPage';
 import { BuyersPage } from './pages/BuyersPage';
+import { SellersPage } from './pages/SellersPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -52,8 +54,12 @@ function AppRoutes() {
       return <ContactDetailPage />;
     case 'pipeline':
       return <PipelinePage />;
+    case 'opportunities':
+      return <OpportunitiesPage />;
     case 'buyers':
       return <BuyersPage />;
+    case 'sellers':
+      return <SellersPage />;
     case 'activity-log':
       return <ActivityLogPage />;
     case 'notifications':

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { Toast } from '../components/Toast';
+import { EditContactModal } from '../components/EditContactModal';
 import { supabase } from '../lib/supabase';
 import { useRouter } from '../context/RouterContext';
 import { useAuth } from '../context/AuthContext';
@@ -292,6 +293,7 @@ export function ContactDetailPage() {
   const [editingFollowUp, setEditingFollowUp] = useState(false);
   const [followUpVal, setFollowUpVal] = useState('');
   const [skipTracedLoading, setSkipTracedLoading] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
   const userName = profile?.display_name ?? 'Unknown';
@@ -329,12 +331,28 @@ export function ContactDetailPage() {
     setDncSyncing(true);
     const newDNC = !contact.dnc_toggle;
     const newStatus = newDNC ? 'DNC' : (contact.litigator ? 'Litigator' : 'Clean');
-    await supabase.from('contacts').update({ dnc_toggle: newDNC, overall_status: newStatus }).eq('id', contact.id);
-    setContact(prev => prev ? { ...prev, dnc_toggle: newDNC, overall_status: newStatus } : prev);
-    await logActivity('DNC Toggle', newDNC ? 'Marked DNC' : 'Removed DNC');
+
+    const currentTags = contact.tags || [];
+    let updatedTags: string[];
+
+    if (newDNC) {
+      updatedTags = [...new Set([...currentTags, 'seller-dnc'])];
+    } else {
+      updatedTags = currentTags.filter(tag => tag !== 'seller-dnc');
+    }
+
+    await supabase.from('contacts').update({
+      dnc_toggle: newDNC,
+      overall_status: newStatus,
+      tags: updatedTags
+    }).eq('id', contact.id);
+
+    setContact(prev => prev ? { ...prev, dnc_toggle: newDNC, overall_status: newStatus, tags: updatedTags } : prev);
+    await logActivity('DNC Toggle', newDNC ? 'Marked DNC (added seller-dnc tag)' : 'Removed DNC (removed seller-dnc tag)');
+
     try {
-      await syncDNCToGHL({ ...contact, dnc_toggle: newDNC }, newDNC);
-      showToast(newDNC ? 'DNC enabled — GHL updated' : 'DNC removed — GHL updated');
+      await syncDNCToGHL({ ...contact, dnc_toggle: newDNC, tags: updatedTags }, newDNC);
+      showToast(newDNC ? 'DNC enabled — GHL updated with seller-dnc tag' : 'DNC removed — seller-dnc tag removed from GHL');
     } catch {
       showToast('DNC updated in DB (GHL sync failed)', 'error');
     }
@@ -454,7 +472,9 @@ export function ContactDetailPage() {
     );
   }
 
-  const fullName = `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim() || 'Unknown Contact';
+  const fullName = contact.lead_type === 'commercial'
+    ? (contact.property_name || 'Unknown Property')
+    : (`${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim() || 'Unknown Contact');
 
   return (
     <Layout
@@ -526,6 +546,13 @@ export function ContactDetailPage() {
 
           {/* Quick actions */}
           <div className="flex flex-wrap items-center gap-2">
+            {(profile?.role === 'admin' || profile?.role === 'agent') && (
+              <button onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                <Edit2 size={13} /> Edit
+              </button>
+            )}
             <button onClick={handleDNCToggle} disabled={dncSyncing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               style={{
@@ -771,17 +798,34 @@ export function ContactDetailPage() {
                 <Card key={i} title={`Contact ${i}${name ? `: ${name}` : ''}`} icon={<Phone size={14} style={{ color: 'var(--accent-bright)' }} />}>
                   <div className="space-y-3">
                     {type && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Type: {type}</p>}
-                    {phones.map((p, j) => (
-                      <div key={j} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: 'var(--bg)' }}>
-                        <Phone size={13} style={{ color: 'var(--text-muted)' }} />
-                        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{p.num}</span>
-                        {p.type && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.type}</span>}
-                      </div>
-                    ))}
+                    {phones.map((p, j) => {
+                      const isDNC = p.type?.toLowerCase().includes('dnc') || p.type?.toLowerCase().includes('do not call');
+                      const isLitigator = p.type?.toLowerCase().includes('litigator');
+                      return (
+                        <div key={j} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: 'var(--bg)' }}>
+                          <Phone size={13} style={{ color: isDNC || isLitigator ? '#ef4444' : 'var(--text-muted)' }} />
+                          <span className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{p.num}</span>
+                          {p.type && !isDNC && !isLitigator && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.type}</span>}
+                          {isDNC && (
+                            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#ef444420', color: '#ef4444' }}>
+                              DO NOT CALL
+                            </span>
+                          )}
+                          {isLitigator && (
+                            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#ef444420', color: '#ef4444' }}>
+                              LITIGATOR
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                     {emails.map((e, j) => e ? (
                       <div key={j} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: 'var(--bg)' }}>
-                        <Mail size={13} style={{ color: 'var(--text-muted)' }} />
-                        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{e}</span>
+                        <Mail size={13} style={{ color: '#10b981' }} />
+                        <span className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>{e}</span>
+                        <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#10b98120', color: '#10b981' }}>
+                          Email Available
+                        </span>
                       </div>
                     ) : null)}
                   </div>
@@ -1094,6 +1138,17 @@ export function ContactDetailPage() {
             showToast('Call logged');
           }}
           userName={userName}
+        />
+      )}
+      {showEditModal && contact && (
+        <EditContactModal
+          contact={contact}
+          onClose={() => setShowEditModal(false)}
+          onSaved={updatedContact => {
+            setContact(updatedContact);
+            showToast('Contact updated successfully');
+            setShowEditModal(false);
+          }}
         />
       )}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}

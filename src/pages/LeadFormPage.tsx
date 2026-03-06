@@ -17,6 +17,7 @@ const defaultForm = (): LeadFormData => ({
   email: '',
   dnc: false,
   owner_type: 'Individual',
+  lead_type: 'acquisition',
   length_of_ownership: '',
   estimated_equity: '',
   absentee_owner: false,
@@ -80,6 +81,7 @@ export function LeadFormPage({ editLead }: LeadFormPageProps) {
         email: editLead.email,
         dnc: editLead.dnc,
         owner_type: editLead.owner_type,
+        lead_type: editLead.lead_type || 'acquisition',
         length_of_ownership: editLead.length_of_ownership,
         estimated_equity: editLead.estimated_equity,
         absentee_owner: editLead.absentee_owner,
@@ -192,6 +194,17 @@ export function LeadFormPage({ editLead }: LeadFormPageProps) {
 
         <FormSection title="Owner Information">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+            <FormField
+              type="select"
+              label="Lead Type"
+              value={form.lead_type}
+              onChange={v => set('lead_type', v as LeadFormData['lead_type'])}
+              options={[
+                { value: 'acquisition', label: 'Acquisition (Residential)' },
+                { value: 'commercial', label: 'Commercial' },
+              ]}
+              className="sm:col-span-3"
+            />
             <FormField
               type="text"
               label="Owner Name"

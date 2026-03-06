@@ -7,12 +7,14 @@ import {
 import { Layout } from '../components/Layout';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { parseCSV, mapCSVRowToContact } from '../lib/csvParser';
+import { parseCSV, mapCSVRowToContact, buildContactsJson } from '../lib/csvParser';
+import { analyzeCSV, mapRowToContact, generateImportSummary, type CSVAnalysis } from '../lib/csvAnalyzer';
 import {
   computeDistressScore, detectDNCLitigator, determineOverallStatus,
-  buildDealAutomatorUrl, SCORE_TIER_COLORS, STATUS_COLORS,
+  buildDealAutomatorUrl, SCORE_TIER_COLORS, SCORE_TIER_EMOJIS, STATUS_COLORS,
 } from '../lib/scoring';
 import { pushContactToGHL } from '../lib/ghl';
+import { findDuplicate } from '../lib/duplicateDetection';
 import type { Contact, ImportBatch, CSVRow, OverallStatus } from '../types';
 
 interface ResultRow {
@@ -49,6 +51,7 @@ export function LeadImportPage() {
   const [progressLabel, setProgressLabel] = useState('');
   const [results, setResults] = useState<ResultRow[]>([]);
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterLeadType, setFilterLeadType] = useState('');
   const [filterTier, setFilterTier] = useState('');
   const [filterState, setFilterState] = useState('');
   const [filterPushed, setFilterPushed] = useState('');
@@ -60,6 +63,10 @@ export function LeadImportPage() {
   const [ghlSyncing, setGhlSyncing] = useState(false);
   const [ghlProgress, setGhlProgress] = useState({ done: 0, total: 0, synced: 0, failed: 0 });
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [csvAnalysis, setCsvAnalysis] = useState<CSVAnalysis | null>(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewRowsPerPage, setPreviewRowsPerPage] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef(false);
 
@@ -72,8 +79,32 @@ export function LeadImportPage() {
     setBatches((data ?? []) as ImportBatch[]);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files?.[0] ?? null);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0] ?? null;
+    setFile(selectedFile);
+
+    if (selectedFile) {
+      try {
+        const text = await selectedFile.text();
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 2) return;
+
+        const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+        const sampleRows = lines.slice(1, 6).map(line => {
+          const values = line.split(',').map(v => v.replace(/"/g, '').trim());
+          return values;
+        });
+
+        const analysis = analyzeCSV(headers, sampleRows);
+        setCsvAnalysis(analysis);
+        setShowAnalysis(true);
+      } catch (err) {
+        console.error('Failed to analyze CSV:', err);
+      }
+    } else {
+      setCsvAnalysis(null);
+      setShowAnalysis(false);
+    }
   };
 
   const handleProcess = async () => {
@@ -87,10 +118,28 @@ export function LeadImportPage() {
     abortRef.current = false;
 
     const text = await file.text();
-    const rows: CSVRow[] = parseCSV(text);
-    if (rows.length === 0) { setParsing(false); alert('No data rows found in CSV.'); return; }
+    console.log(`CSV file size: ${text.length} characters`);
 
-    setProgressLabel('Creating import batch...');
+    const rows: CSVRow[] = parseCSV(text);
+    console.log(`✓ CSV file parsed: ${rows.length} total rows to process`);
+
+    if (rows.length === 0) {
+      setParsing(false);
+      alert('No data rows found in CSV.');
+      return;
+    }
+
+    // Log sample of first few rows for debugging
+    if (rows.length > 0) {
+      console.log('First row sample:', {
+        firstName: rows[0]['FirstName'],
+        lastName: rows[0]['LastName'],
+        propertyAddress: rows[0]['PropertyAddress'],
+        totalKeys: Object.keys(rows[0]).length
+      });
+    }
+
+    setProgressLabel(`Creating import batch for ${rows.length} rows...`);
     const { data: batch, error: batchErr } = await supabase.from('import_batches').insert({
       batch_name: batchName.trim(),
       uploaded_by: profile?.display_name ?? 'Unknown',
@@ -105,38 +154,39 @@ export function LeadImportPage() {
     }
     setCurrentBatchId(batch.id);
 
-    const existingHashes = new Set<string>();
-    const { data: existingContacts } = await supabase
-      .from('contacts')
-      .select('address_hash')
-      .not('address_hash', 'is', null);
-    (existingContacts ?? []).forEach((c: { address_hash?: string }) => {
-      if (c.address_hash) existingHashes.add(c.address_hash);
-    });
-
-    const seenHashesThisBatch = new Set<string>();
     const processedRows: ResultRow[] = [];
-    let cleanCount = 0, dncCount = 0, litigatorCount = 0, duplicateCount = 0;
+    let cleanCount = 0, dncCount = 0, litigatorCount = 0;
+    let processed = 0;
 
-    for (let i = 0; i < rows.length; i++) {
+    // Process all rows - NO duplicate detection, import every row
+    setProgressLabel('Processing rows...');
+    for (const row of rows) {
       if (abortRef.current) break;
-      const row = rows[i];
-      const pct = Math.round(((i + 1) / rows.length) * 100);
+
+      processed++;
+      const pct = Math.round((processed / rows.length) * 50); // Only use 50% of progress bar for processing
       setProgress(pct);
-      setProgressLabel(`Saving row ${i + 1} of ${rows.length}...`);
+      setProgressLabel(`Processing ${processed} of ${rows.length} rows...`);
 
       const { dnc, litigator } = detectDNCLitigator(row);
-      const hash = row['AddressHash'] || row['Id'] || '';
-      const isDuplicate = !!(hash && (existingHashes.has(hash) || seenHashesThisBatch.has(hash)));
-      if (hash) seenHashesThisBatch.add(hash);
-
-      const status = determineOverallStatus(dnc, litigator, isDuplicate);
-      const { score, tier, flags } = computeDistressScore(row);
       const contactData = mapCSVRowToContact(row);
+      const jsonbData = buildContactsJson(row, dnc && !litigator);
+      contactData.lead_type = csvAnalysis?.leadType || 'acquisition';
+
+      if (csvAnalysis?.leadType === 'commercial' && row['FirstName']) {
+        contactData.property_name = row['FirstName'];
+        contactData.first_name = undefined;
+        contactData.last_name = undefined;
+      }
+
+      const status = determineOverallStatus(dnc, litigator);
+      const { score, tier, flags } = computeDistressScore(row);
+      const hash = row['AddressHash'] || row['Id'] || '';
       const daUrl = hash ? buildDealAutomatorUrl(hash) : '';
 
       const contactToSave: Partial<Contact> = {
         ...contactData,
+        ...jsonbData,
         batch_id: batch.id,
         batch_name: batchName.trim(),
         dnc_toggle: dnc && !litigator,
@@ -155,85 +205,105 @@ export function LeadImportPage() {
       if (status === 'Clean') cleanCount++;
       else if (status === 'DNC') dncCount++;
       else if (status === 'Litigator') litigatorCount++;
-      else if (status === 'Duplicate') duplicateCount++;
-
-      let savedId: string | undefined;
-      let saveError: string | undefined;
-
-      if (isDuplicate && hash) {
-        const { data: existing } = await supabase
-          .from('contacts')
-          .select('id')
-          .eq('address_hash', hash)
-          .maybeSingle();
-        if (existing?.id) {
-          await supabase.from('contacts').update({
-            overall_status: 'Duplicate',
-            batch_id: batch.id,
-            batch_name: batchName.trim(),
-          }).eq('id', existing.id);
-          savedId = existing.id;
-        } else {
-          const { data: ins, error: insErr } = await supabase
-            .from('contacts')
-            .insert(contactToSave)
-            .select('id')
-            .single();
-          savedId = ins?.id;
-          saveError = insErr?.message;
-        }
-      } else {
-        const { data: ins, error: insErr } = await supabase
-          .from('contacts')
-          .insert(contactToSave)
-          .select('id')
-          .single();
-        savedId = ins?.id;
-        if (insErr) {
-          if (insErr.code === '23505' && hash) {
-            const { data: existing } = await supabase
-              .from('contacts')
-              .select('id')
-              .eq('address_hash', hash)
-              .maybeSingle();
-            savedId = existing?.id;
-          } else {
-            saveError = insErr.message;
-          }
-        }
-      }
 
       processedRows.push({
-        contact: { ...contactToSave, id: savedId },
+        contact: contactToSave,
         originalRow: row,
         status,
         distress_score: score,
         score_tier: tier,
         pushed: false,
         pushing: false,
-        saved_id: savedId,
-        save_error: saveError,
         expanded: false,
       });
     }
+
+    // Now save ALL contacts ONE BY ONE - no limits, maximum reliability
+    setProgressLabel('Saving contacts to database...');
+
+    // Create mapping with original processedRows indices - save ALL rows
+    const contactsToInsert: Array<{ contact: Partial<Contact>; rowIndex: number }> = [];
+    processedRows.forEach((r, idx) => {
+      contactsToInsert.push({ contact: r.contact, rowIndex: idx });
+    });
+
+    console.log(`Starting individual insert for ${contactsToInsert.length} contacts (one-by-one for maximum reliability)`);
+    let totalSaved = 0;
+    let totalFailed = 0;
+
+    // Insert contacts ONE AT A TIME to ensure no data is lost
+    for (let i = 0; i < contactsToInsert.length; i++) {
+      if (abortRef.current) {
+        console.log('Import aborted by user');
+        break;
+      }
+
+      const item = contactsToInsert[i];
+      const contactNum = i + 1;
+
+      // Update progress bar: 50% + (contactNum / total * 50%)
+      const saveProgress = 50 + Math.round((contactNum / contactsToInsert.length) * 50);
+      setProgress(saveProgress);
+      setProgressLabel(`Saving contact ${contactNum} of ${contactsToInsert.length}...`);
+
+      try {
+        // Insert single contact
+        const { data: inserted, error: insErr } = await supabase
+          .from('contacts')
+          .insert([item.contact])
+          .select('id, property_address, property_city')
+          .single();
+
+        if (insErr) {
+          console.error(`Contact ${contactNum} insert error:`, insErr);
+          processedRows[item.rowIndex].save_error = insErr.message;
+          totalFailed++;
+        } else if (inserted) {
+          console.log(`Contact ${contactNum} inserted successfully with ID ${inserted.id}`);
+          processedRows[item.rowIndex].saved_id = inserted.id;
+          processedRows[item.rowIndex].contact.id = inserted.id;
+          totalSaved++;
+        }
+      } catch (err) {
+        console.error(`Contact ${contactNum} insert exception:`, err);
+        processedRows[item.rowIndex].save_error = err instanceof Error ? err.message : 'Unknown error';
+        totalFailed++;
+      }
+
+      // Update progress display every 10 contacts
+      if (contactNum % 10 === 0 || contactNum === contactsToInsert.length) {
+        console.log(`Progress: ${totalSaved} saved, ${totalFailed} failed out of ${contactNum} processed`);
+      }
+    }
+
+    console.log(`Import complete: ${totalSaved} contacts saved successfully, ${totalFailed} failed out of ${contactsToInsert.length} attempted`);
+
+    // Now finalize - show 100% complete
+    setProgress(100);
+    const finalMsg = `✓ Import Complete! ${totalSaved} saved, ${totalFailed} failed (${rows.length} total rows)`;
+    setProgressLabel(finalMsg);
+    console.log(finalMsg);
+    setResults(processedRows);
 
     await supabase.from('import_batches').update({
       status: 'Complete',
       clean_count: cleanCount,
       dnc_count: dncCount,
       litigator_count: litigatorCount,
-      duplicate_count: duplicateCount,
+      duplicate_count: 0,
     }).eq('id', batch.id);
 
     await supabase.from('contact_activity_logs').insert({
       action: 'Batch Import',
-      action_detail: `Imported "${batchName.trim()}" — ${rows.length} rows. Clean: ${cleanCount}, DNC: ${dncCount}, Litigator: ${litigatorCount}, Duplicate: ${duplicateCount}`,
+      action_detail: `Imported "${batchName.trim()}" — ${rows.length} rows. Saved: ${totalSaved}, Clean: ${cleanCount}, DNC: ${dncCount}, Litigator: ${litigatorCount}, Failed: ${totalFailed}`,
       action_by: profile?.display_name ?? 'Unknown',
-    }).catch(() => {});
+    }).catch(() => { });
 
-    setResults(processedRows);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     setParsing(false);
     setProgressLabel('');
+    setProgress(0);
 
     if (autoSyncEnabled) {
       await runGHLAutoSync(processedRows);
@@ -271,7 +341,7 @@ export function LeadImportPage() {
           if (!contact) throw new Error('Contact not found');
 
           const tags = ['SSREI Import'];
-          if (contact.dnc_toggle) tags.push('DNC');
+          if (contact.dnc_toggle) tags.push('seller-dnc');
           if (contact.litigator) tags.push('Litigator');
 
           const { contactId, opportunityId } = await pushContactToGHL({ ...contact, tags } as Contact);
@@ -320,7 +390,7 @@ export function LeadImportPage() {
     try {
       const { data: contact } = await supabase.from('contacts').select('*').eq('id', row.saved_id).single();
       const tags = ['SSREI Import'];
-      if ((contact as Contact).dnc_toggle) tags.push('DNC');
+      if ((contact as Contact).dnc_toggle) tags.push('seller-dnc');
       if ((contact as Contact).litigator) tags.push('Litigator');
 
       const { contactId, opportunityId } = await pushContactToGHL({ ...(contact as Contact), tags });
@@ -340,7 +410,7 @@ export function LeadImportPage() {
       });
 
       if (currentBatchId) {
-        await supabase.rpc('increment_pushed_count', { batch_id: currentBatchId }).catch(() => {});
+        await supabase.rpc('increment_pushed_count', { batch_id: currentBatchId }).catch(() => { });
       }
 
       setResults(prev => prev.map((r, i) => i === idx ? { ...r, pushing: false, pushed: true, ghl_sync_status: 'Synced' } : r));
@@ -377,12 +447,19 @@ export function LeadImportPage() {
 
   const filteredResults = results.filter(r => {
     if (filterStatus && r.status !== filterStatus) return false;
+    if (filterLeadType && r.contact.lead_type !== filterLeadType) return false;
     if (filterTier && r.score_tier !== filterTier) return false;
     if (filterState && r.contact.property_state !== filterState) return false;
     if (filterPushed === 'yes' && !r.pushed) return false;
     if (filterPushed === 'no' && r.pushed) return false;
     return true;
   });
+
+  const totalPages = Math.ceil(filteredResults.length / previewRowsPerPage);
+  const paginatedResults = filteredResults.slice(
+    (previewPage - 1) * previewRowsPerPage,
+    previewPage * previewRowsPerPage
+  );
 
   const summaryClean = results.filter(r => r.status === 'Clean').length;
   const summaryDNC = results.filter(r => r.status === 'DNC').length;
@@ -435,6 +512,66 @@ export function LeadImportPage() {
                     <input ref={fileRef} type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
                   </div>
                 </div>
+
+                {csvAnalysis && showAnalysis && (
+                  <div className="bg-[#0A1628] border border-[#1E6FA4]/20 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-semibold text-sm">CSV Analysis</h3>
+                      <button onClick={() => setShowAnalysis(false)} className="text-white/40 hover:text-white text-xs">Hide</button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <div className="text-white/40 text-xs mb-1">Lead Type</div>
+                        <div className="text-white font-medium">{csvAnalysis.leadType === 'commercial' ? 'Commercial' : 'Acquisitions'}</div>
+                      </div>
+                      <div>
+                        <div className="text-white/40 text-xs mb-1">Sample Rows</div>
+                        <div className="text-white font-medium">{csvAnalysis.rowCount}</div>
+                      </div>
+                      <div>
+                        <div className="text-white/40 text-xs mb-1">Has Scores</div>
+                        <div className="text-white font-medium">{csvAnalysis.hasScores ? 'Yes' : 'No'}</div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-white/40 text-xs mb-2">Detected Fields</div>
+                      <div className="flex flex-wrap gap-2">
+                        {csvAnalysis.phoneColumns.length > 0 && (
+                          <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {csvAnalysis.phoneColumns.length} phone columns
+                          </span>
+                        )}
+                        {csvAnalysis.emailColumns.length > 0 && (
+                          <span className="text-xs px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            {csvAnalysis.emailColumns.length} email columns
+                          </span>
+                        )}
+                        {Object.keys(csvAnalysis.ghlMappings).length > 0 && (
+                          <span className="text-xs px-2 py-1 rounded-md bg-[#1E6FA4]/10 text-[#1E90FF] border border-[#1E6FA4]/20">
+                            {Object.keys(csvAnalysis.ghlMappings).length} GHL mappings
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {Object.keys(csvAnalysis.ghlMappings).length > 0 && (
+                      <div>
+                        <div className="text-white/40 text-xs mb-2">GHL Field Mappings</div>
+                        <div className="text-xs text-white/60 space-y-1">
+                          {Object.entries(csvAnalysis.ghlMappings).slice(0, 5).map(([csv, ghl]) => (
+                            <div key={csv} className="flex items-center gap-2">
+                              <span className="text-white/80">{csv}</span>
+                              <span className="text-white/30">→</span>
+                              <span className="text-[#1E90FF]">{`{{contact.${ghl}}}`}</span>
+                            </div>
+                          ))}
+                          {Object.keys(csvAnalysis.ghlMappings).length > 5 && (
+                            <div className="text-white/30 text-xs">+{Object.keys(csvAnalysis.ghlMappings).length - 5} more</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'rgba(30,111,164,0.08)', border: '1px solid rgba(30,111,164,0.2)' }}>
                   <button
@@ -557,6 +694,12 @@ export function LeadImportPage() {
                         {options.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ))}
+                    <select value={filterLeadType} onChange={e => setFilterLeadType(e.target.value)}
+                      className="bg-[#0A1628] border border-white/15 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-[#1E6FA4]">
+                      <option value="">All Lead Types</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="acquisition">Acquisitions</option>
+                    </select>
                     <select value={filterState} onChange={e => setFilterState(e.target.value)}
                       className="bg-[#0A1628] border border-white/15 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-[#1E6FA4]">
                       <option value="">All States</option>
@@ -588,7 +731,7 @@ export function LeadImportPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredResults.map((row) => {
+                        {paginatedResults.map((row) => {
                           const realIdx = results.indexOf(row);
                           return (
                             <React.Fragment key={realIdx}>
@@ -602,7 +745,7 @@ export function LeadImportPage() {
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SCORE_TIER_COLORS[row.score_tier as keyof typeof SCORE_TIER_COLORS] ?? ''}`}>
-                                      {row.score_tier}
+                                      {SCORE_TIER_EMOJIS[row.score_tier as keyof typeof SCORE_TIER_EMOJIS]} {row.score_tier}
                                     </span>
                                     <span className="text-white/40 text-xs font-mono">{row.distress_score}</span>
                                   </div>
@@ -721,6 +864,50 @@ export function LeadImportPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Pagination Controls */}
+                  {filteredResults.length > 0 && (
+                    <div className="px-4 py-3 border-t border-white/8 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-white/40">Rows per page:</span>
+                        <select
+                          value={previewRowsPerPage}
+                          onChange={(e) => {
+                            setPreviewRowsPerPage(Number(e.target.value));
+                            setPreviewPage(1);
+                          }}
+                          className="bg-[#0A1628] border border-white/10 rounded px-2 py-1 text-xs text-white/80"
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                          <option value={200}>200</option>
+                          <option value={500}>500</option>
+                        </select>
+                        <span className="text-xs text-white/40">
+                          {((previewPage - 1) * previewRowsPerPage) + 1}-{Math.min(previewPage * previewRowsPerPage, filteredResults.length)} of {filteredResults.length}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                          disabled={previewPage === 1}
+                          className="px-3 py-1 text-xs rounded border border-white/10 text-white/60 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          ◀ Prev
+                        </button>
+                        <span className="text-xs text-white/60">Page {previewPage} of {totalPages}</span>
+                        <button
+                          onClick={() => setPreviewPage(p => Math.min(totalPages, p + 1))}
+                          disabled={previewPage >= totalPages}
+                          className="px-3 py-1 text-xs rounded border border-white/10 text-white/60 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

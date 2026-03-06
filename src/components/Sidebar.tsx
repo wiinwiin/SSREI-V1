@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard, Upload, Users, GitBranch,
-  UserCheck, Activity, Bell, Settings, Menu, X, LogOut,
+  UserCheck, Activity, Bell, Settings, Menu, X, LogOut, Home,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from '../context/RouterContext';
@@ -19,8 +19,9 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', page: 'dashboard', icon: <LayoutDashboard size={18} /> },
   { label: 'Lead Import', page: 'lead-import', icon: <Upload size={18} />, requiredPermission: 'canImportLeads' },
   { label: 'Contacts', page: 'contacts', icon: <Users size={18} /> },
-  { label: 'Pipeline', page: 'pipeline', icon: <GitBranch size={18} /> },
+  { label: 'Opportunities', page: 'opportunities', icon: <GitBranch size={18} /> },
   { label: 'Buyers', page: 'buyers', icon: <UserCheck size={18} />, requiredPermission: 'canViewBuyers' },
+  { label: 'Sellers', page: 'sellers', icon: <Home size={18} />, requiredPermission: 'canViewBuyers' },
   { label: 'Activity Log', page: 'activity-log', icon: <Activity size={18} />, requiredPermission: 'canViewActivityLog' },
   { label: 'Notifications', page: 'notifications', icon: <Bell size={18} /> },
   { label: 'Settings', page: 'settings', icon: <Settings size={18} />, requiredPermission: 'canViewSettings' },
