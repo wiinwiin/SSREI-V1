@@ -1,0 +1,4 @@
+FirstName,LastName,PropertyAddress,PropertyCity,PropertyState,PropertyPostalCode,County,Contact1Name,Contact1Type,Contact1Phone_1,Contact1Phone_1_Type,Contact1Email_1,Contact1Phone_1_DNC,Contact1Phone_1_Litigator,Contact2Name,Contact2Type,Contact2Phone_1,Contact2Phone_1_Type,Contact2Email_1,ForeclosureActivity,AbsenteeOwner,LTV,AVM
+John,Doe,123 Main St,Dallas,TX,75201,Dallas,John Doe,Landlord,2145550001,Mobile,john@example.com,no,no,Jane Doe,Spouse,2145550002,Mobile,jane@example.com,no,no,50,300000
+Alice,DNC,456 Oak Ave,Dallas,TX,75202,Dallas,Alice DNC,Landlord,2145550003,Mobile,alice@example.com,yes,no,Bob DNC,Spouse,2145550004,Mobile,bob@example.com,no,no,60,350000
+Charlie,Litigator,789 Pine Rd,Dallas,TX,75203,Dallas,Charlie Lit,Landlord,2145550005,Mobile,charlie@example.com,no,yes,,,2145550006,,charlie2@example.com,yes,yes,95,400000
