@@ -263,10 +263,10 @@ export interface Contact {
   // Newly added GHL Custom Fields
   deal_automator_types?: string;
   retail_value_estimate?: number;
+  wholesale_sellability_score?: number;
+  retail_sellability_score?: number;
   rental_sellability_score?: number;
   assessed_value?: number;
-  retail_sellability_score?: number;
-  wholesale_sellability_score?: number;
   garage_area?: number;
   interior_walls?: string;
   basement_area?: number;
