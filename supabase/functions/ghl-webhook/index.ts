@@ -1,5 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,12 +23,22 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Parse payload from GHL
-    const payload = await req.json();
-    console.log("GHL Webhook Payload Received:", JSON.stringify(payload, null, 2));
+    const bodyText = await req.text();
+    console.log("Raw Payload Received:", bodyText);
+    
+    let payload;
+    try {
+      payload = JSON.parse(bodyText);
+    } catch (e) {
+      throw new Error(`Failed to parse JSON payload: ${bodyText.slice(0, 100)}...`);
+    }
 
-    const ghlContactId = payload.contact_id || payload.id;
+    // Attempt to find ID in multiple common GHL locations
+    const ghlContactId = payload.contact_id || payload.id || (payload.contact && (payload.contact.id || payload.contact.contact_id));
+    
     if (!ghlContactId) {
-      throw new Error("No contact_id or id found in payload");
+      console.warn("Payload structure:", JSON.stringify(payload, null, 2));
+      throw new Error("No contact_id or id found in payload. Are you sending a full contact/opportunity object from GHL?");
     }
 
     // 2. Map GHL fields to SSREI Contact columns
@@ -119,8 +128,14 @@ Deno.serve(async (req) => {
     });
 
   } catch (err: any) {
-    console.error("Webhook processing failed:", err.message);
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("Webhook processing failed!");
+    console.error("Error Message:", err.message);
+    console.error("Error Stack:", err.stack);
+    
+    return new Response(JSON.stringify({ 
+      error: err.message,
+      details: err.details || "Check Supabase logs for full stack trace"
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

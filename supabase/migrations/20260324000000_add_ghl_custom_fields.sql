@@ -34,4 +34,6 @@ ADD COLUMN IF NOT EXISTS adjacent_area text,
 ADD COLUMN IF NOT EXISTS roof_shape text;
 
 -- Add index for GHL sync and duplicate prevention
-CREATE UNIQUE INDEX IF NOT EXISTS contacts_ghl_contact_id_idx ON contacts(ghl_contact_id) WHERE ghl_contact_id IS NOT NULL AND ghl_contact_id != '';
+-- Add proper unique constraint for GHL sync and duplicate prevention
+ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_ghl_contact_id_unique;
+ALTER TABLE contacts ADD CONSTRAINT contacts_ghl_contact_id_unique UNIQUE (ghl_contact_id);

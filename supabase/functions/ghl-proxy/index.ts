@@ -14,6 +14,7 @@ interface GHLSettings {
   ghl_api_key: string;
   ghl_location_id: string;
   ghl_pipeline_id: string;
+  ghl_webhook_url?: string;
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -29,7 +30,7 @@ async function getSettings(
   const { data } = await supabase
     .from("app_settings")
     .select("key, value")
-    .in("key", ["api_key", "location_id", "pipeline_id"]);
+    .in("key", ["api_key", "location_id", "pipeline_id", "webhook_url"]);
 
   if (!data || data.length === 0) {
     throw new Error("Could not load GHL settings from database.");
@@ -48,6 +49,7 @@ async function getSettings(
     ghl_api_key: settings.api_key,
     ghl_location_id: settings.location_id,
     ghl_pipeline_id: settings.pipeline_id,
+    ghl_webhook_url: settings.webhook_url,
   };
 }
 
@@ -641,6 +643,33 @@ async function handleSubmitLead(
     } else {
       const oppData = await oppRes.json();
       opportunityId = oppData.opportunity?.id || "";
+    }
+  }
+
+  // Dual Sync: Send lead to the custom Webhook Hook if configured
+  if (settings.ghl_webhook_url) {
+    console.log(`Sending dual-sync webhook to: ${settings.ghl_webhook_url}`);
+    try {
+      const webhookPayload = {
+        ...normalizedLead,
+        ghl_contact_id: contactId,
+        ghl_opportunity_id: opportunityId,
+        _source: "SSREI Proxy Sync"
+      };
+      
+      const hookRes = await fetch(settings.ghl_webhook_url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(webhookPayload)
+      });
+      
+      if (hookRes.ok) {
+        console.log("✓ Webhook Hook sync successful");
+      } else {
+        console.error(`⚠ Webhook Hook sync failed (${hookRes.status})`);
+      }
+    } catch (hookErr) {
+      console.error("⚠ Webhook Hook sync error:", hookErr);
     }
   }
 
