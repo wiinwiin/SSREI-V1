@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
       property_zip: payload.postalCode,
       contact1_email1: payload.email,
       contact1_phone1: payload.phone,
+      tags: Array.isArray(payload.tags) ? payload.tags : [],
       source: "Deal Automator",
       source_detail: "GHL Webhook",
       updated_at: new Date().toISOString(),
