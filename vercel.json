@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/ghl-proxy",
-      "destination": "https://iozeugdizxzndvedsgtw.supabase.co/functions/v1/ghl-proxy"
+      "destination": "https://wcrcjmhgoukgpqqyfoma.supabase.co/functions/v1/ghl-proxy"
     },
     {
       "source": "/((?!api/).*)",
