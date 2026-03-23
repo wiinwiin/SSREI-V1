@@ -252,9 +252,6 @@ export interface Contact {
   retail_score?: number;
   rental_score?: number;
   wholesale_score?: number;
-  retail_sellability_score?: number;
-  rental_sellability_score?: number;
-  wholesale_sellability_score?: number;
   created_by?: string;
   pushed_to_ghl?: boolean;
   ghl_contact_id?: string;
@@ -262,6 +259,41 @@ export interface Contact {
   ghl_stage?: string;
   ghl_sync_status?: string;
   tags?: string[];
+  
+  // Newly added GHL Custom Fields
+  deal_automator_types?: string;
+  retail_value_estimate?: number;
+  rental_sellability_score?: number;
+  assessed_value?: number;
+  retail_sellability_score?: number;
+  wholesale_sellability_score?: number;
+  garage_area?: number;
+  interior_walls?: string;
+  basement_area?: number;
+  gross_area?: number;
+  living_area?: number;
+  flooring?: string;
+  parcel_number?: string;
+  last_sale_date?: string;
+  last_sale_price?: number;
+  municipality?: string;
+  agent_email?: string;
+  below_above_value?: string;
+  residential_investments?: string;
+  commercial_investments?: string;
+  agent_phone?: string;
+  length_of_ownership?: string;
+  owner_type?: string;
+  out_of_state_owner?: boolean;
+  estimated_equity?: number;
+  submitted_by?: string;
+  building_area?: number;
+  legal_description?: string;
+  location_influence?: string;
+  school_district?: string;
+  adjacent_area?: string;
+  roof_shape?: string;
+
   created_at?: string;
   updated_at?: string;
 }

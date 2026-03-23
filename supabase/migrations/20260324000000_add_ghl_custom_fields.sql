@@ -1,0 +1,37 @@
+-- Add new GHL Custom Fields to contacts table
+ALTER TABLE contacts 
+ADD COLUMN IF NOT EXISTS deal_automator_types text,
+ADD COLUMN IF NOT EXISTS retail_value_estimate numeric,
+ADD COLUMN IF NOT EXISTS rental_sellability_score numeric,
+ADD COLUMN IF NOT EXISTS assessed_value numeric,
+ADD COLUMN IF NOT EXISTS retail_sellability_score numeric,
+ADD COLUMN IF NOT EXISTS wholesale_sellability_score numeric,
+ADD COLUMN IF NOT EXISTS garage_area numeric,
+ADD COLUMN IF NOT EXISTS interior_walls text,
+ADD COLUMN IF NOT EXISTS basement_area numeric,
+ADD COLUMN IF NOT EXISTS gross_area numeric,
+ADD COLUMN IF NOT EXISTS living_area numeric,
+ADD COLUMN IF NOT EXISTS flooring text,
+ADD COLUMN IF NOT EXISTS parcel_number text,
+ADD COLUMN IF NOT EXISTS last_sale_date text,
+ADD COLUMN IF NOT EXISTS last_sale_price numeric,
+ADD COLUMN IF NOT EXISTS municipality text,
+ADD COLUMN IF NOT EXISTS agent_email text,
+ADD COLUMN IF NOT EXISTS below_above_value text,
+ADD COLUMN IF NOT EXISTS residential_investments text,
+ADD COLUMN IF NOT EXISTS commercial_investments text,
+ADD COLUMN IF NOT EXISTS agent_phone text,
+ADD COLUMN IF NOT EXISTS length_of_ownership text,
+ADD COLUMN IF NOT EXISTS owner_type text,
+ADD COLUMN IF NOT EXISTS out_of_state_owner boolean DEFAULT false,
+ADD COLUMN IF NOT EXISTS estimated_equity numeric,
+ADD COLUMN IF NOT EXISTS submitted_by text,
+ADD COLUMN IF NOT EXISTS building_area numeric,
+ADD COLUMN IF NOT EXISTS legal_description text,
+ADD COLUMN IF NOT EXISTS location_influence text,
+ADD COLUMN IF NOT EXISTS school_district text,
+ADD COLUMN IF NOT EXISTS adjacent_area text,
+ADD COLUMN IF NOT EXISTS roof_shape text;
+
+-- Add index for GHL sync and duplicate prevention
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_ghl_contact_id_idx ON contacts(ghl_contact_id) WHERE ghl_contact_id IS NOT NULL AND ghl_contact_id != '';
