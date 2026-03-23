@@ -1,0 +1,22 @@
+name: Deploy Function
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.sbp_73cdc7ee8b808095e6b83fc7bcee00e2806889ec }}
+      PROJECT_ID: wcrcjmhgoukgpqqyfoma
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase functions deploy ghl-webhook --project-ref $PROJECT_ID --no-verify-jwt
