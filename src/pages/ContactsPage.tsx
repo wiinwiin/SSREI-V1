@@ -3,7 +3,7 @@ import {
   Search, Filter, Send, RefreshCw, ChevronDown, ChevronUp,
   Star, ToggleLeft, ToggleRight, Download, Plus, Trash2,
   Tag, CheckSquare, Square, X, AlertTriangle, BookmarkPlus,
-  Bookmark, ChevronRight, Loader2,
+  Bookmark, ChevronRight, Loader2, Mail,
 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { Toast } from '../components/Toast';
@@ -240,6 +240,143 @@ function BulkTagModal({ count, onClose, onApply }: { count: number; onClose: () 
   );
 }
 
+function BulkEmailModal({ contacts, onClose }: { contacts: Contact[]; onClose: () => void }) {
+  const withEmail = contacts.filter(c => c.contact1_email1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(withEmail.map(c => c.id)));
+  const [additionalText, setAdditionalText] = useState('');
+  const [sendMode, setSendMode] = useState<'individual' | 'batch'>('batch');
+
+  const parseAdditional = (raw: string): string[] => {
+    return raw.split(/[,;\n]+/).map(e => e.trim()).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  };
+  const additionalEmails = parseAdditional(additionalText);
+
+  const toggleAll = () => {
+    if (selectedIds.size === withEmail.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(withEmail.map(c => c.id)));
+  };
+  const toggle = (id: string) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const selectedContacts = withEmail.filter(c => selectedIds.has(c.id));
+  const totalRecipients = selectedContacts.length + additionalEmails.length;
+
+  const handleSend = () => {
+    const allEmails = [
+      ...selectedContacts.map(c => c.contact1_email1!),
+      ...additionalEmails,
+    ];
+    if (!allEmails.length) return;
+    window.location.href = sendMode === 'individual'
+      ? `mailto:${allEmails[0]}?bcc=${allEmails.slice(1).join(',')}`
+      : `mailto:${allEmails.join(',')}`;
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
+      <div className="w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0">
+          <div>
+            <h2 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>Send Bulk Email</h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+              {selectedIds.size} of {withEmail.length} contacts selected
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 pb-2 space-y-4">
+          {/* Send mode */}
+          <div className="flex gap-2">
+            {(['batch', 'individual'] as const).map(m => (
+              <button key={m} onClick={() => setSendMode(m)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{
+                  background: sendMode === m ? 'var(--accent)' : 'var(--bg)',
+                  color: sendMode === m ? '#fff' : 'var(--text-secondary)',
+                  border: '1px solid var(--border)',
+                }}>
+                {m === 'batch' ? 'Batch (All at once)' : 'Individual (Personalized)'}
+              </button>
+            ))}
+          </div>
+
+          {/* Contact list */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Contacts</span>
+              <button onClick={toggleAll} className="text-xs font-medium" style={{ color: 'var(--accent-bright)' }}>
+                {selectedIds.size === withEmail.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            {withEmail.length === 0 ? (
+              <p className="text-xs py-3 text-center" style={{ color: 'var(--text-muted)' }}>No selected contacts have email addresses.</p>
+            ) : (
+              <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                {withEmail.map((c, i) => {
+                  const checked = selectedIds.has(c.id);
+                  return (
+                    <div key={c.id} onClick={() => toggle(c.id)}
+                      className="flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
+                      style={{
+                        borderTop: i > 0 ? '1px solid var(--border)' : undefined,
+                        background: checked ? 'rgba(30,111,164,0.12)' : 'transparent',
+                      }}>
+                      {checked ? <CheckSquare size={14} style={{ color: 'var(--accent-bright)', flexShrink: 0 }} /> : <Square size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                          {`${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || c.property_name || 'Unknown'}
+                        </p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.contact1_email1}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Additional emails */}
+          <div>
+            <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Additional Emails {additionalEmails.length > 0 && <span style={{ color: 'var(--accent-bright)' }}>({additionalEmails.length} detected)</span>}
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Enter emails separated by commas, semicolons, or new lines..."
+              value={additionalText}
+              onChange={e => setAdditionalText(e.target.value)}
+              className="w-full rounded-lg px-3 py-2 text-xs resize-none focus:outline-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+            />
+            {additionalEmails.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {additionalEmails.map(e => (
+                  <span key={e} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>{e}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{totalRecipients} total recipient{totalRecipients !== 1 ? 's' : ''}</span>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
+            <button onClick={handleSend} disabled={totalRecipients === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
+              style={{ background: 'var(--accent)', color: '#fff' }}>
+              <Mail size={14} /> Send ({totalRecipients})
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmModal({ title, message, confirmLabel, onClose, onConfirm, danger = false }: {
   title: string; message: string; confirmLabel: string; onClose: () => void; onConfirm: () => void; danger?: boolean;
 }) {
@@ -285,6 +422,7 @@ export function ContactsPage() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkTagModal, setShowBulkTagModal] = useState(false);
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
   const [showBulkPushConfirm, setShowBulkPushConfirm] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBulkDNCConfirm, setShowBulkDNCConfirm] = useState(false);
@@ -777,6 +915,11 @@ export function ContactsPage() {
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
                 <Tag size={12} /> Add Tag
               </button>
+              <button onClick={() => setShowBulkEmailModal(true)} disabled={bulkLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                <Mail size={12} /> Email
+              </button>
               <button onClick={() => setShowBulkDNCConfirm(true)} disabled={bulkLoading}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 style={{ background: 'rgba(234,88,12,0.15)', border: '1px solid rgba(234,88,12,0.4)', color: '#fb923c' }}>
@@ -1005,6 +1148,7 @@ export function ContactsPage() {
       {showAddModal && <ManualAddModal onClose={() => setShowAddModal(false)} onSaved={load} userId={user?.id ?? ''} />}
       {showSaveModal && <SaveFilterModal onClose={() => setShowSaveModal(false)} onSave={handleSaveFilter} />}
       {showBulkTagModal && <BulkTagModal count={selected.size} onClose={() => setShowBulkTagModal(false)} onApply={handleBulkTag} />}
+      {showBulkEmailModal && <BulkEmailModal contacts={contacts.filter(c => selected.has(c.id))} onClose={() => setShowBulkEmailModal(false)} />}
       {showBulkPushConfirm && (
         <ConfirmModal
           title="Push to GHL"
